@@ -19,10 +19,18 @@ $ heroku local
 
 Your app should now be running on [localhost:5000](http://localhost:5000/).
 
+On windows run with:
+
+```sh
+$ run.bat
+```
+
 ## Deploying to Heroku
 
 ```sh
 $ heroku create
+$ heroku config:set GOVERSION=go1.13.3
+$ heroku config:set GIN_MODE=release
 $ git push heroku master
 $ heroku open
 ```
