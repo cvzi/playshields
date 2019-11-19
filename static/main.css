@@ -1,26 +1,45 @@
-.jumbotron {
-  background: #532F8C;
-  color: white;
-  padding-bottom: 80px; }
-  .jumbotron .btn-primary {
-    background: #845ac7;
-    border-color: #845ac7; }
-    .jumbotron .btn-primary:hover {
-      background: #7646c1; }
-  .jumbotron p {
-    color: #d9ccee;
-    max-width: 75%;
-    margin: 1em auto 2em; }
-  .navbar + .jumbotron {
-    margin-top: -20px; }
-  .jumbotron .lang-logo {
-    display: block;
-    background: #B01302;
-    border-radius: 50%;
-    overflow: hidden;
-    width: 100px;
-    height: 100px;
-    margin: auto;
-    border: 2px solid white; }
-    .jumbotron .lang-logo img {
-      max-width: 100%; }
+body {
+  font-family:'Lekton', sans-serif;
+  color:#553344;
+}
+
+.addplaceholder {
+  cursor:pointer;
+  color:silver
+}
+.addplaceholder:hover {
+  color:black;
+}
+.copy {
+  cursor:copy;
+  color:silver
+}
+.copy:hover {
+  color:black;
+}
+.copy .status {
+  color:green
+}
+#shieldurl,#shieldurlstyled{
+  width:60%
+}
+#copymenu {
+  position:absolute;
+  background:#f0f0f0;
+  box-shadow: 2px 2px 2px #aaa;
+  border:1px solid gray;
+  border-radius:0.2em
+}
+#copymenu ul {
+  list-style:none;
+  margin:0;
+  padding:0;
+}
+#copymenu ul li {
+  cursor:copy;
+  border-radius:0.2em;
+  padding:0px 5px; 
+}
+#copymenu ul li:hover {
+  background:#aaa;
+}
