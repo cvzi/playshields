@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/cvzi/playshields/lru"
@@ -17,6 +18,7 @@ import (
 const (
 	playstoreAppURL = "https://play.google.com/store/apps/details?hl=en_US&id="
 	escapeDollar    = "\xf0\x9f\x92\xb2\xf0\x9f\x92\xb2"
+	appIdPattern    = "[a-zA-Z0-9_]+\\.[a-zA-Z0-9_]+(\\.[a-zA-Z0-9_]+)*"
 )
 
 // htmlCache holds the complete body of a downloaded website or an error string.
@@ -42,6 +44,8 @@ var playStorePlaceHolders map[string]placeHolder
 
 var playStoreDescriptions map[string]string
 
+var regExpAppId = regexp.MustCompile(appIdPattern)
+
 func init() {
 	playStorePlaceHolders = map[string]placeHolder{
 		"$version":  placeHolder{playStoreGet, "Current Version", "App version"},
@@ -58,7 +62,6 @@ func init() {
 	for key, value := range playStorePlaceHolders {
 		playStoreDescriptions[key] = value.description
 	}
-
 }
 
 // playStoreTable cuts out a single value from the table.
@@ -73,14 +76,14 @@ func playStoreGet(placeHolderName string, placeHolderGetterParams []string) (htm
 	url := playstoreAppURL + url.QueryEscape(appid)
 
 	if html, err = cachedGetBody(url); err != nil {
-		return "", err
+		return "", fmt.Errorf("App unavailable: %s", err.Error())
 	}
 
 	if playStorePlaceHolder, ok := playStorePlaceHolders[placeHolderName]; ok {
 		searchString := playStorePlaceHolder.param
 		return playStoreTable(html, searchString), nil
 	}
-	return "", fmt.Errorf("placeholder `%s` not implemented", placeHolderName)
+	return "", fmt.Errorf("placeholder '%s' not implemented", placeHolderName)
 }
 
 // playStoreGetRating downloads the play store app website and cuts out the rating number.
@@ -89,7 +92,7 @@ func playStoreGetRating(placeHolderName string, placeHolderGetterParams []string
 	url := playstoreAppURL + url.QueryEscape(appid)
 
 	if html, err = cachedGetBody(url); err != nil {
-		return "", err
+		return "", fmt.Errorf("App unavailable: %s", err.Error())
 	}
 
 	slices := strings.Split(strings.Split(html, "stars out of five stars\">")[0], "\"Rated")
@@ -110,9 +113,8 @@ func cachedGetBody(url string) (html string, err error) {
 			htmlCache.Set(url, htmlCacheEntry{errorStr: err.Error(), ok: false})
 			return "", err
 		} else if resp.StatusCode != http.StatusOK {
-			errStr := fmt.Sprintf("HTTP status `%s`", resp.Status)
-			htmlCache.Set(url, htmlCacheEntry{errorStr: errStr, ok: false})
-			return "", errors.New(errStr)
+			htmlCache.Set(url, htmlCacheEntry{errorStr: resp.Status, ok: false})
+			return "", errors.New(resp.Status)
 		}
 		defer resp.Body.Close()
 		data, err := ioutil.ReadAll(resp.Body)
@@ -210,6 +212,12 @@ func main() {
 				errorJSON(c, "missing app id")
 				return
 			}
+			indices := regExpAppId.FindStringIndex(appid)
+			if indices == nil || indices[0] > 0 || indices[1] < len(appid) {
+				errorJSON(c, "invalid app id format")
+				return
+			}
+
 			label := c.DefaultQuery("l", c.DefaultQuery("label", "play"))
 			message := c.DefaultQuery("m", c.DefaultQuery("message", "$version"))
 
