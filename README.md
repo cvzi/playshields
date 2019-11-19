@@ -1,28 +1,19 @@
 
-# go-getting-started
+# playshields
 
-A barebones Go app, which can easily be deployed to Heroku.
+A Go app that offers JSON data for a [shields.io endpoint](https://shields.io/endpoint), which can easily be deployed to Heroku.
 
-This application supports the [Getting Started with Go on Heroku](https://devcenter.heroku.com/articles/getting-started-with-go) article - check it out.
+See a live version here: [https://playshields.herokuapp.com/](https://playshields.herokuapp.com/)
 
 ## Running Locally
 
-Make sure you have [Go](http://golang.org/doc/install) version 1.12 or newer and the [Heroku Toolbelt](https://toolbelt.heroku.com/) installed.
+Make sure you have [Go](http://golang.org/doc/install) version 1.13 or newer and the [Heroku Toolbelt](https://toolbelt.heroku.com/) installed.
 
 ```sh
-$ git clone https://github.com/heroku/go-getting-started.git
-$ cd go-getting-started
-$ go build -o bin/go-getting-started -v . # or `go build -o bin/go-getting-started.exe -v .` in git bash
-github.com/mattn/go-colorable
-gopkg.in/bluesuncorp/validator.v5
-golang.org/x/net/context
-github.com/heroku/x/hmetrics
-github.com/gin-gonic/gin/render
-github.com/manucorporat/sse
-github.com/heroku/x/hmetrics/onload
-github.com/gin-gonic/gin/binding
-github.com/gin-gonic/gin
-github.com/heroku/go-getting-started
+$ git clone https://github.com/cvzi/playshields.git
+$ cd playshields
+$ go build -o bin/playshields -v . # or `go build -o bin/playshields.exe -v .` in git bash
+...
 $ heroku local
 ```
 
@@ -43,6 +34,4 @@ or
 
 ## Documentation
 
-For more information about using Go on Heroku, see these Dev Center articles:
-
-- [Go on Heroku](https://devcenter.heroku.com/categories/go)
+**TODO**
