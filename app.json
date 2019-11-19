@@ -1,12 +1,12 @@
 {
-  "name": "Start on Heroku: Go",
-  "description": "Go Getting Started Example App",
+  "name": "playshields",
+  "description": "shields.io badges for android play store apps",
   "keywords": [
-    "getting-started",
+    "shields.io",
     "go",
-    "sample",
-    "example"
+    "badge",
+    "play"
   ],
-  "website": "http://github.com/heroku/go-getting-started",
-  "repository": "http://github.com/heroku/go-getting-started"
+  "website": "http://github.com/cvzi/playshields",
+  "repository": "http://github.com/cvzi/playshields"
 }
