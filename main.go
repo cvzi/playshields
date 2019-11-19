@@ -1,17 +1,184 @@
 package main
 
 import (
+	"errors"
+	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 
+	"github.com/cvzi/playshields/lru"
 	"github.com/gin-gonic/gin"
-	_ "github.com/heroku/x/hmetrics/onload"
 )
+
+const (
+	playstoreAppURL = "https://play.google.com/store/apps/details?hl=en_US&id="
+	escapeDollar    = "\xf0\x9f\x92\xb2\xf0\x9f\x92\xb2"
+)
+
+// htmlCache holds the complete body of a downloaded website or an error string
+var htmlCache = lru.New(500)
+
+// jsonCache holds the json code for a badge
+var jsonCache = lru.New(10000)
+
+type htmlCacheEntry struct {
+	html     string
+	ok       bool
+	errorStr string
+}
+
+type placeHolderGetter func(string, []string) (string, error)
+type placeHolder struct {
+	placeHolderGetter placeHolderGetter
+	param             string
+	description       string
+}
+
+var playStorePlaceHolders map[string]placeHolder
+
+var playStoreDescriptions map[string]string
+
+func init() {
+	playStorePlaceHolders = map[string]placeHolder{
+		"$version":  placeHolder{playStoreGet, "Current Version", "App version"},
+		"$installs": placeHolder{playStoreGet, "Installs", "Installs"},
+		"$size":     placeHolder{playStoreGet, "Size", "Size"},
+		"$updated":  placeHolder{playStoreGet, "Updated", "Last update"},
+		"$android":  placeHolder{playStoreGet, "Requires Android", "Supported android version"},
+		/*"$friendly": placeHolder{playStoreGet, "Content Rating", "Content Rating"},*/
+		"$rating": placeHolder{playStoreGetRating, "", "Rating"},
+	}
+
+	// Holds the descriptions for the website
+	playStoreDescriptions = make(map[string]string)
+	for key, value := range playStorePlaceHolders {
+		playStoreDescriptions[key] = value.description
+	}
+
+}
+
+// playStoreTable cuts out a single value from the table
+func playStoreTable(html string, key string) string {
+	slices := strings.Split(strings.Split(strings.Split(html, ">"+key+"</")[1], "</span>")[0], ">")
+	return slices[len(slices)-1]
+}
+
+// playStoreGet downloads the play store app website and cuts out the relevant part from the table
+func playStoreGet(placeHolderName string, placeHolderGetterParams []string) (html string, err error) {
+	appid := placeHolderGetterParams[0]
+	url := playstoreAppURL + url.QueryEscape(appid)
+
+	if html, err = cachedGetBody(url); err != nil {
+		return "", err
+	}
+
+	if playStorePlaceHolder, ok := playStorePlaceHolders[placeHolderName]; ok {
+		searchString := playStorePlaceHolder.param
+		return playStoreTable(html, searchString), nil
+	}
+	return "", fmt.Errorf("placeholder `%s` not implemented", placeHolderName)
+}
+
+// playStoreGetRating downloads the play store app website and cuts out the rating number
+func playStoreGetRating(placeHolderName string, placeHolderGetterParams []string) (html string, err error) {
+	appid := placeHolderGetterParams[0]
+	url := playstoreAppURL + url.QueryEscape(appid)
+
+	if html, err = cachedGetBody(url); err != nil {
+		return "", err
+	}
+
+	slices := strings.Split(strings.Split(html, "stars out of five stars\">")[0], "\"Rated")
+	return strings.TrimSpace(slices[len(slices)-1]), nil
+}
+
+// cachedGetBody downloads a website and cuts out the body part and stores the result in cache
+func cachedGetBody(url string) (html string, err error) {
+	if cacheEntry, ok := htmlCache.Get(url); ok {
+		if cacheEntry.(htmlCacheEntry).ok {
+			html = cacheEntry.(htmlCacheEntry).html
+		} else {
+			return "", errors.New(cacheEntry.(htmlCacheEntry).errorStr)
+		}
+	} else {
+		resp, err := http.Get(url)
+		if err != nil {
+			htmlCache.Set(url, htmlCacheEntry{errorStr: err.Error(), ok: false})
+			return "", err
+		} else if resp.StatusCode != http.StatusOK {
+			errStr := fmt.Sprintf("HTTP status `%s`", resp.Status)
+			htmlCache.Set(url, htmlCacheEntry{errorStr: errStr, ok: false})
+			return "", errors.New(errStr)
+		}
+		defer resp.Body.Close()
+		data, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			htmlCache.Set(url, htmlCacheEntry{errorStr: err.Error(), ok: false})
+			return "", err
+		}
+		html = string(data)
+		html = strings.SplitN(html, "</head>", 2)[1]
+		htmlCache.Set(url, htmlCacheEntry{html: html, ok: true})
+	}
+	return html, nil
+}
+
+// replacePlaceHolder replaces a single $field in s with the result of f
+func replacePlaceHolder(errorArr *[]error, s string, placeHolderName string, f placeHolderGetter, placeHolderGetterParams []string) string {
+	if strings.Contains(s, placeHolderName) {
+		value, err := f(placeHolderName, placeHolderGetterParams)
+		if err != nil {
+			*errorArr = append(*errorArr, err)
+			return s
+		}
+		if len(value) > 1000 {
+			value = value[0:1000]
+		}
+		s = strings.ReplaceAll(s, placeHolderName, value)
+	}
+	return s
+}
+
+// replacePlaceHolders replaces all placeholders like $field
+func replacePlaceHolders(s string, placeHolderNames map[string]placeHolder, placeHolderGetterParams []string) (string, error) {
+	errorArr := make([]error, 0)
+	s = strings.ReplaceAll(s, "$$", escapeDollar)
+
+	for key, value := range placeHolderNames {
+		s = replacePlaceHolder(&errorArr, s, key, value.placeHolderGetter, placeHolderGetterParams)
+	}
+
+	s = strings.ReplaceAll(s, escapeDollar, "$$")
+	_, err := combineErrors(errorArr)
+	return s, err
+}
+
+// combineErrors creates a single error from a slice of errors
+func combineErrors(errorArr []error) (hasError bool, err error) {
+	errN := len(errorArr)
+	if errN == 0 {
+		return true, nil
+	}
+	errStrings := make([]string, 0, errN)
+	for i := 0; i < errN; i++ {
+		if errorArr[i] != nil {
+			errStrings = append(errStrings, errorArr[i].Error())
+		}
+	}
+	return false, errors.New(strings.Join(errStrings, ","))
+}
+
+// errorJSON sends badge that shows the error message
+func errorJSON(c *gin.Context, message string) {
+	c.JSON(http.StatusOK, gin.H{"schemaVersion": 1, "label": "error", "message": message})
+}
 
 func main() {
 	port := os.Getenv("PORT")
-
 	if port == "" {
 		log.Fatal("$PORT must be set")
 	}
@@ -20,9 +187,54 @@ func main() {
 	router.Use(gin.Logger())
 	router.LoadHTMLGlob("templates/*.tmpl.html")
 	router.Static("/static", "static")
-
+	router.GET("/favicon.ico", func(c *gin.Context) {
+		c.Redirect(http.StatusMovedPermanently, "/static/favicon.ico")
+	})
 	router.GET("/", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "index.tmpl.html", nil)
+		templateValues := gin.H{
+			"appid":        c.DefaultQuery("appid", ""),
+			"label":        c.DefaultQuery("label", "Android"),
+			"message":      c.DefaultQuery("message", "$version"),
+			"placeholders": playStoreDescriptions}
+		c.HTML(http.StatusOK, "index.tmpl.html", templateValues)
+	})
+
+	router.GET("/play", func(c *gin.Context) {
+		c.Header("Cache-Control", "max-age=10000")
+		cacheKey := c.Request.URL.Path + c.Request.URL.RawQuery
+		if cacheEntry, ok := jsonCache.Get(cacheKey); ok {
+			c.JSON(http.StatusOK, cacheEntry)
+		} else {
+			appid := c.DefaultQuery("i", c.DefaultQuery("id", ""))
+			if appid == "" {
+				errorJSON(c, "missing app id")
+				return
+			}
+			label := c.DefaultQuery("l", c.DefaultQuery("label", "play"))
+			message := c.DefaultQuery("m", c.DefaultQuery("message", "$version"))
+
+			if len(label) > 1000 {
+				label = label[0:1000]
+			}
+			if len(message) > 1000 {
+				message = message[0:1000]
+			}
+
+			message, err := replacePlaceHolders(message, playStorePlaceHolders, []string{appid})
+			if err != nil {
+				errorJSON(c, err.Error())
+				return
+			}
+
+			label, err = replacePlaceHolders(label, playStorePlaceHolders, []string{appid})
+			if err != nil {
+				errorJSON(c, err.Error())
+				return
+			}
+			cacheEntry = gin.H{"schemaVersion": 1, "label": label, "message": message, "cacheSeconds": 3600}
+			c.JSON(http.StatusOK, cacheEntry)
+			jsonCache.Set(cacheKey, cacheEntry)
+		}
 	})
 
 	router.Run(":" + port)
