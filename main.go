@@ -19,10 +19,10 @@ const (
 	escapeDollar    = "\xf0\x9f\x92\xb2\xf0\x9f\x92\xb2"
 )
 
-// htmlCache holds the complete body of a downloaded website or an error string
+// htmlCache holds the complete body of a downloaded website or an error string.
 var htmlCache = lru.New(500)
 
-// jsonCache holds the json code for a badge
+// jsonCache holds the json code for a badge.
 var jsonCache = lru.New(10000)
 
 type htmlCacheEntry struct {
@@ -53,7 +53,7 @@ func init() {
 		"$rating": placeHolder{playStoreGetRating, "", "Rating"},
 	}
 
-	// Holds the descriptions for the website
+	// Holds the descriptions for the website.
 	playStoreDescriptions = make(map[string]string)
 	for key, value := range playStorePlaceHolders {
 		playStoreDescriptions[key] = value.description
@@ -61,13 +61,13 @@ func init() {
 
 }
 
-// playStoreTable cuts out a single value from the table
+// playStoreTable cuts out a single value from the table.
 func playStoreTable(html string, key string) string {
 	slices := strings.Split(strings.Split(strings.Split(html, ">"+key+"</")[1], "</span>")[0], ">")
 	return slices[len(slices)-1]
 }
 
-// playStoreGet downloads the play store app website and cuts out the relevant part from the table
+// playStoreGet downloads the play store app website and cuts out the relevant part from the table.
 func playStoreGet(placeHolderName string, placeHolderGetterParams []string) (html string, err error) {
 	appid := placeHolderGetterParams[0]
 	url := playstoreAppURL + url.QueryEscape(appid)
@@ -83,7 +83,7 @@ func playStoreGet(placeHolderName string, placeHolderGetterParams []string) (htm
 	return "", fmt.Errorf("placeholder `%s` not implemented", placeHolderName)
 }
 
-// playStoreGetRating downloads the play store app website and cuts out the rating number
+// playStoreGetRating downloads the play store app website and cuts out the rating number.
 func playStoreGetRating(placeHolderName string, placeHolderGetterParams []string) (html string, err error) {
 	appid := placeHolderGetterParams[0]
 	url := playstoreAppURL + url.QueryEscape(appid)
@@ -96,7 +96,7 @@ func playStoreGetRating(placeHolderName string, placeHolderGetterParams []string
 	return strings.TrimSpace(slices[len(slices)-1]), nil
 }
 
-// cachedGetBody downloads a website and cuts out the body part and stores the result in cache
+// cachedGetBody downloads a website and cuts out the body part and stores the result in cache.
 func cachedGetBody(url string) (html string, err error) {
 	if cacheEntry, ok := htmlCache.Get(url); ok {
 		if cacheEntry.(htmlCacheEntry).ok {
@@ -127,7 +127,7 @@ func cachedGetBody(url string) (html string, err error) {
 	return html, nil
 }
 
-// replacePlaceHolder replaces a single $field in s with the result of f
+// replacePlaceHolder replaces a single $field in s with the result of f.
 func replacePlaceHolder(errorArr *[]error, s string, placeHolderName string, f placeHolderGetter, placeHolderGetterParams []string) string {
 	if strings.Contains(s, placeHolderName) {
 		value, err := f(placeHolderName, placeHolderGetterParams)
@@ -143,7 +143,7 @@ func replacePlaceHolder(errorArr *[]error, s string, placeHolderName string, f p
 	return s
 }
 
-// replacePlaceHolders replaces all placeholders like $field
+// replacePlaceHolders replaces all placeholders like $field.
 func replacePlaceHolders(s string, placeHolderNames map[string]placeHolder, placeHolderGetterParams []string) (string, error) {
 	errorArr := make([]error, 0)
 	s = strings.ReplaceAll(s, "$$", escapeDollar)
@@ -157,7 +157,7 @@ func replacePlaceHolders(s string, placeHolderNames map[string]placeHolder, plac
 	return s, err
 }
 
-// combineErrors creates a single error from a slice of errors
+// combineErrors creates a single error from a slice of errors.
 func combineErrors(errorArr []error) (hasError bool, err error) {
 	errN := len(errorArr)
 	if errN == 0 {
@@ -172,7 +172,7 @@ func combineErrors(errorArr []error) (hasError bool, err error) {
 	return false, errors.New(strings.Join(errStrings, ","))
 }
 
-// errorJSON sends badge that shows the error message
+// errorJSON sends badge that shows the error message.
 func errorJSON(c *gin.Context, message string) {
 	c.JSON(http.StatusOK, gin.H{"schemaVersion": 1, "label": "error", "message": message})
 }

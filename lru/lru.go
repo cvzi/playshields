@@ -1,3 +1,4 @@
+// A LRU "least recently used" cache
 package lru
 
 import (
@@ -6,6 +7,9 @@ import (
 	"sync"
 )
 
+// Cache represents a LRU consisting of a map as an index and a list to hold data and indicate the last recently used queue.
+// The zero value cannot be used.
+// TODO make zero value usable
 type Cache struct {
 	max   int
 	index map[interface{}]*list.Element
@@ -13,11 +17,13 @@ type Cache struct {
 	sync.RWMutex
 }
 
-type ListData struct {
+// listData is the list payload
+type listData struct {
 	key   interface{}
 	value interface{}
 }
 
+// New returns an empty cache with capacity max
 func New(max int) *Cache {
 	return &Cache{
 		max:   max,
@@ -26,17 +32,21 @@ func New(max int) *Cache {
 	}
 }
 
+// Get returns element or nil, ok is true if the key x is present in the cache and
+// sets the element as the last recently used.
 func (c *Cache) Get(key interface{}) (value interface{}, ok bool) {
 	c.RLock()
 	defer c.RUnlock()
 	listElement, ok := c.index[key]
 	if ok {
 		c.MoveToFront(listElement)
-		return listElement.Value.(*ListData).value, true
+		return listElement.Value.(*listData).value, true
 	}
 	return nil, false
 }
 
+// Set inserts or updates the value of key and
+// sets the element as the last recently used.
 func (c *Cache) Set(key interface{}, value interface{}) {
 	c.Lock()
 	defer c.Unlock()
@@ -44,15 +54,15 @@ func (c *Cache) Set(key interface{}, value interface{}) {
 	listElement, ok := c.index[key]
 	if ok {
 		c.MoveToFront(listElement)
-		listElement.Value.(*ListData).value = value
+		listElement.Value.(*listData).value = value
 		return
 	}
-	listElement = c.PushFront(&ListData{key: key, value: value})
+	listElement = c.PushFront(&listData{key: key, value: value})
 	c.index[key] = listElement
 
 	if c.max != 0 && c.Len() > c.max {
 		lastElement := c.Back()
-		lastKey := lastElement.Value.(*ListData).key
+		lastKey := lastElement.Value.(*listData).key
 		c.Remove(lastElement)
 		delete(c.index, lastKey)
 	}
