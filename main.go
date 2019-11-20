@@ -1,3 +1,4 @@
+// Shields.io endpoint provider for app meta data from play store.
 package main
 
 import (
@@ -18,7 +19,7 @@ import (
 const (
 	playstoreAppURL = "https://play.google.com/store/apps/details?hl=en_US&id="
 	escapeDollar    = "\xf0\x9f\x92\xb2\xf0\x9f\x92\xb2"
-	appIdPattern    = "[a-zA-Z0-9_]+\\.[a-zA-Z0-9_]+(\\.[a-zA-Z0-9_]+)*"
+	appIDPattern    = "[a-zA-Z0-9_]+\\.[a-zA-Z0-9_]+(\\.[a-zA-Z0-9_]+)*"
 )
 
 // htmlCache holds the complete body of a downloaded website or an error string.
@@ -44,17 +45,17 @@ var playStorePlaceHolders map[string]placeHolder
 
 var playStoreDescriptions map[string]string
 
-var regExpAppId = regexp.MustCompile(appIdPattern)
+var regExpAppID = regexp.MustCompile(appIDPattern)
 
 func init() {
 	playStorePlaceHolders = map[string]placeHolder{
-		"$version":  placeHolder{playStoreGet, "Current Version", "App version"},
-		"$installs": placeHolder{playStoreGet, "Installs", "Installs"},
-		"$size":     placeHolder{playStoreGet, "Size", "Size"},
-		"$updated":  placeHolder{playStoreGet, "Updated", "Last update"},
-		"$android":  placeHolder{playStoreGet, "Requires Android", "Supported android version"},
-		/*"$friendly": placeHolder{playStoreGet, "Content Rating", "Content Rating"},*/
-		"$rating": placeHolder{playStoreGetRating, "", "Rating"},
+		"$version":  {playStoreGet, "Current Version", "App version"},
+		"$installs": {playStoreGet, "Installs", "Installs"},
+		"$size":     {playStoreGet, "Size", "Size"},
+		"$updated":  {playStoreGet, "Updated", "Last update"},
+		"$android":  {playStoreGet, "Requires Android", "Supported android version"},
+		"$rating":   {playStoreGetRating, "", "Rating"},
+		/*"$friendly": {playStoreGet, "Content Rating", "Content Rating"},*/
 	}
 
 	// Holds the descriptions for the website.
@@ -76,7 +77,7 @@ func playStoreGet(placeHolderName string, placeHolderGetterParams []string) (htm
 	url := playstoreAppURL + url.QueryEscape(appid)
 
 	if html, err = cachedGetBody(url); err != nil {
-		return "", fmt.Errorf("App unavailable: %s", err.Error())
+		return "", fmt.Errorf("app unavailable: %s", err.Error())
 	}
 
 	if playStorePlaceHolder, ok := playStorePlaceHolders[placeHolderName]; ok {
@@ -92,7 +93,7 @@ func playStoreGetRating(placeHolderName string, placeHolderGetterParams []string
 	url := playstoreAppURL + url.QueryEscape(appid)
 
 	if html, err = cachedGetBody(url); err != nil {
-		return "", fmt.Errorf("App unavailable: %s", err.Error())
+		return "", fmt.Errorf("app unavailable: %s", err.Error())
 	}
 
 	slices := strings.Split(strings.Split(html, "stars out of five stars\">")[0], "\"Rated")
@@ -212,7 +213,7 @@ func main() {
 				errorJSON(c, "missing app id")
 				return
 			}
-			indices := regExpAppId.FindStringIndex(appid)
+			indices := regExpAppID.FindStringIndex(appid)
 			if indices == nil || indices[0] > 0 || indices[1] < len(appid) {
 				errorJSON(c, "invalid app id format")
 				return

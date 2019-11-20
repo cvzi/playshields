@@ -1,4 +1,4 @@
-// A LRU "least recently used" cache
+// Package lru is a "least recently used" cache.
 package lru
 
 import (
@@ -8,8 +8,8 @@ import (
 )
 
 // Cache represents a LRU consisting of a map as an index and a list to hold data and indicate the last recently used queue.
-// The zero value cannot be used.
-// TODO make zero value usable
+//
+// BUG(cvzi):The zero value of Cache cannot be used. TODO make zero value usable
 type Cache struct {
 	max   int
 	index map[interface{}]*list.Element
