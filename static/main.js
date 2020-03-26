@@ -5,6 +5,9 @@ if (document.readyState === 'loading') {
 }
 
 function main (ev) {
+  if (!document.getElementById('appid').value) {
+    document.getElementById('appid').value = document.getElementById('appid').placeholder.split(' ')[0]
+  }
   document.getElementById('baseurl').value = document.location.origin + document.getElementById('basepath').value
   document.getElementById('baseurl').addEventListener('change', updateUrls)
   document.getElementById('baseendpoint').addEventListener('change', updateUrls)
@@ -52,7 +55,7 @@ function updateUrls () {
   document.getElementById('jsonurl').value = jsonurl
   document.getElementById('shieldurl').value = shieldurl
   document.getElementById('shieldurlstyled').value = shieldurlstyled
-  
+
   const updateDelayed = function() {
     updateImages()
     fetch(jsonurl).then(response => response.text()).then(function(text) {
