@@ -1,3 +1,11 @@
+/* Google fonts Lekton, latin */
+@font-face {
+  font-family: 'Lekton';
+  font-style: normal;
+  font-weight: 400;
+  src: local('Lekton'), local('Lekton-Regular'), url(/static/Lekton/Lekton.woff2) format('woff2'), url(/static/Lekton/Lekton.ttf) format('truetype');
+}
+
 body {
   font-family:'Lekton', sans-serif;
   color:#553344;
