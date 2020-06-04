@@ -16,7 +16,7 @@
 </tbody>
 </table>
 <br>
-<table>
+<table class="controls">
 <tbody>
   <tr>
     <td>
@@ -42,6 +42,7 @@
     </td>
     <td>
       <input type="text" size="60" name="label" id="label" value="{{ .label }}">
+      <br class="mobile" />
       {{range $k, $v := .placeholders}}
         <span class="addplaceholder" onclick="this.parentNode.querySelector('input').value += this.textContent" title="{{$v}}">{{$k}}</span>
       {{end}}
@@ -53,6 +54,7 @@
     </td>
     <td>
       <input type="text" size="60" name="message" id="message" value="{{ .message }}">
+      <br class="mobile" />
       {{range $k, $v := .placeholders}}
         <span class="addplaceholder" onclick="this.parentNode.querySelector('input').value += this.textContent" title="{{$v}}">{{$k}}</span>
       {{end}}
@@ -64,11 +66,12 @@
   <tr>
     <td>URL:</td>
     <td>
-      <input type="text" size="100" id="jsonurl">
-      Copy this into the form at <a href="https://shields.io/endpoint" target="_blank">https://shields.io/endpoint</a> to customize color/logo
+      <input type="text" size="60" data-desktop-size="100" data-mobile-size="60" id="jsonurl">
+      <br class="mobile" />
+      Copy this into the form at <br class="mobile" /><a href="https://shields.io/endpoint" target="_blank">https://shields.io/endpoint</a> to customize color/logo
     </td>
   </tr>
-  <tr style="color:silver">
+  <tr style="color:silver" class="desktop">
     <td>JSON:</td>
     <td><pre id="json"></pre></td>
   </tr>

@@ -29,6 +29,7 @@ function main (ev) {
     if(m) m.style.display = 'none'
   })
   updateUrls()
+  toggleMobile()
 }
 
 function composeJsonUrl() {
@@ -115,3 +116,21 @@ function copyMenu (ev) {
   this.parentNode.appendChild(div)
 }
 
+function toggleMobile () {
+  const isMobile = navigator.userAgent.match(/mobile/i)
+  if (isMobile) {
+    document.querySelectorAll('.desktop').forEach(function (e) { e.style.display = 'none' })
+    document.querySelectorAll('.mobile').forEach(function (e) { e.style.display = '' })
+    document.getElementById('jsonurl').size = document.getElementById('jsonurl').dataset.mobileSize
+    document.querySelectorAll('.controls tr').forEach(function (tr) {
+      const tds = tr.querySelectorAll('td')
+      if (tds.length > 1) {
+        tr.parentNode.insertBefore(tr.cloneNode(), tr).appendChild(tds[0])
+      }
+    })
+  } else {
+    document.querySelectorAll('.desktop').forEach(function (e) { e.style.display = '' })
+    document.querySelectorAll('.mobile').forEach(function (e) { e.style.display = 'none' })
+    document.getElementById('jsonurl').size = document.getElementById('jsonurl').dataset.desktopSize
+  }
+}
