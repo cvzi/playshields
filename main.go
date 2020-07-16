@@ -4,6 +4,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"html"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -29,7 +30,7 @@ var htmlCache = lru.New(500)
 var jsonCache = lru.New(10000)
 
 type htmlCacheEntry struct {
-	html     string
+	content  string
 	ok       bool
 	errorStr string
 }
@@ -55,6 +56,7 @@ func init() {
 		"$updated":  {playStoreGet, "Updated", "Last update"},
 		"$android":  {playStoreGet, "Requires Android", "Supported android version"},
 		"$rating":   {playStoreGetRating, "", "Rating"},
+		"$name":     {playStoreGetName, "", "Name"},
 		/*"$friendly": {playStoreGet, "Content Rating", "Content Rating"},*/
 	}
 
@@ -66,45 +68,58 @@ func init() {
 }
 
 // playStoreTable cuts out a single value from the table.
-func playStoreTable(html string, key string) string {
-	slices := strings.Split(strings.Split(strings.Split(html, ">"+key+"</")[1], "</span>")[0], ">")
+func playStoreTable(content string, key string) string {
+	slices := strings.Split(strings.Split(strings.Split(content, ">"+key+"</")[1], "</span>")[0], ">")
 	return slices[len(slices)-1]
 }
 
 // playStoreGet downloads the play store app website and cuts out the relevant part from the table.
-func playStoreGet(placeHolderName string, placeHolderGetterParams []string) (html string, err error) {
+func playStoreGet(placeHolderName string, placeHolderGetterParams []string) (content string, err error) {
 	appid := placeHolderGetterParams[0]
 	url := playstoreAppURL + url.QueryEscape(appid)
 
-	if html, err = cachedGetBody(url); err != nil {
+	if content, err = cachedGetBody(url); err != nil {
 		return "", fmt.Errorf("app unavailable: %s", err.Error())
 	}
 
 	if playStorePlaceHolder, ok := playStorePlaceHolders[placeHolderName]; ok {
 		searchString := playStorePlaceHolder.param
-		return playStoreTable(html, searchString), nil
+		return playStoreTable(content, searchString), nil
 	}
 	return "", fmt.Errorf("placeholder '%s' not implemented", placeHolderName)
 }
 
 // playStoreGetRating downloads the play store app website and cuts out the rating number.
-func playStoreGetRating(placeHolderName string, placeHolderGetterParams []string) (html string, err error) {
+func playStoreGetRating(placeHolderName string, placeHolderGetterParams []string) (content string, err error) {
 	appid := placeHolderGetterParams[0]
 	url := playstoreAppURL + url.QueryEscape(appid)
 
-	if html, err = cachedGetBody(url); err != nil {
+	if content, err = cachedGetBody(url); err != nil {
 		return "", fmt.Errorf("app unavailable: %s", err.Error())
 	}
 
-	slices := strings.Split(strings.Split(html, "stars out of five stars\">")[0], "\"Rated")
+	slices := strings.Split(strings.Split(content, "stars out of five stars\">")[0], "\"Rated")
 	return strings.TrimSpace(slices[len(slices)-1]), nil
 }
 
+// playStoreGetName downloads the play store app website and cuts out the app name.
+func playStoreGetName(placeHolderName string, placeHolderGetterParams []string) (content string, err error) {
+	appid := placeHolderGetterParams[0]
+	url := playstoreAppURL + url.QueryEscape(appid)
+
+	if content, err = cachedGetBody(url); err != nil {
+		return "", fmt.Errorf("app unavailable: %s", err.Error())
+	}
+
+	slices := strings.Split(strings.Split(strings.Split(content, "itemprop=\"name\"")[1], "</")[0], ">")
+	return html.UnescapeString(strings.TrimSpace(slices[len(slices)-1])), nil
+}
+
 // cachedGetBody downloads a website and cuts out the body part and stores the result in cache.
-func cachedGetBody(url string) (html string, err error) {
+func cachedGetBody(url string) (content string, err error) {
 	if cacheEntry, ok := htmlCache.Get(url); ok {
 		if cacheEntry.(htmlCacheEntry).ok {
-			html = cacheEntry.(htmlCacheEntry).html
+			content = cacheEntry.(htmlCacheEntry).content
 		} else {
 			return "", errors.New(cacheEntry.(htmlCacheEntry).errorStr)
 		}
@@ -123,11 +138,11 @@ func cachedGetBody(url string) (html string, err error) {
 			htmlCache.Set(url, htmlCacheEntry{errorStr: err.Error(), ok: false})
 			return "", err
 		}
-		html = string(data)
-		html = strings.SplitN(html, "</head>", 2)[1]
-		htmlCache.Set(url, htmlCacheEntry{html: html, ok: true})
+		content = string(data)
+		content = strings.SplitN(content, "</head>", 2)[1]
+		htmlCache.Set(url, htmlCacheEntry{content: content, ok: true})
 	}
-	return html, nil
+	return content, nil
 }
 
 // replacePlaceHolder replaces a single $field in s with the result of f.
