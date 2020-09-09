@@ -2,3 +2,4 @@
 .vscode
 .docker_build/
 bin/
+heracc.bat

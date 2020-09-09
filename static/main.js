@@ -5,6 +5,9 @@ if (document.readyState === 'loading') {
 }
 
 function main (ev) {
+  if (document.location.protocol !== 'https:' && document.location.hostname.indexOf('heroku') !== -1) {
+    document.location.protocol = 'https:'
+  }
   if (!document.getElementById('appid').value) {
     document.getElementById('appid').value = document.getElementById('appid').placeholder.split(' ')[0]
   }
