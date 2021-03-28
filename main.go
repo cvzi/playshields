@@ -216,7 +216,13 @@ func main() {
 			"placeholders": playStoreDescriptions}
 		c.HTML(http.StatusOK, "index.tmpl.html", templateValues)
 	})
-
+	router.GET("/stats", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"schemaVersion": 1,
+			"label": "Status",
+			"message": fmt.Sprintf("%d apps with %d badges", htmlCache.Len(), jsonCache.Len()),
+			"cacheSeconds": 60})
+	})
 	router.GET("/play", func(c *gin.Context) {
 		c.Header("Cache-Control", "max-age=10000")
 		cacheKey := c.Request.URL.Path + c.Request.URL.RawQuery
