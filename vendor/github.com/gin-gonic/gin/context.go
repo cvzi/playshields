@@ -54,7 +54,7 @@ type Context struct {
 	engine *Engine
 
 	// This mutex protect Keys map
-	KeysMutex *sync.RWMutex
+	mu sync.RWMutex
 
 	// Keys is a key/value pair exclusively for the context of each request.
 	Keys map[string]interface{}
@@ -71,6 +71,10 @@ type Context struct {
 	// formCache use url.ParseQuery cached PostForm contains the parsed form data from POST, PATCH,
 	// or PUT body parameters.
 	formCache url.Values
+
+	// SameSite allows a server to define a cookie attribute making it impossible for
+	// the browser to send this cookie along with cross-site requests.
+	sameSite http.SameSite
 }
 
 /************************************/
@@ -82,7 +86,7 @@ func (c *Context) reset() {
 	c.Params = c.Params[0:0]
 	c.handlers = nil
 	c.index = -1
-	c.KeysMutex = &sync.RWMutex{}
+
 	c.fullPath = ""
 	c.Keys = nil
 	c.Errors = c.Errors[0:0]
@@ -94,7 +98,12 @@ func (c *Context) reset() {
 // Copy returns a copy of the current context that can be safely used outside the request's scope.
 // This has to be used when the context has to be passed to a goroutine.
 func (c *Context) Copy() *Context {
-	var cp = *c
+	cp := Context{
+		writermem: c.writermem,
+		Request:   c.Request,
+		Params:    c.Params,
+		engine:    c.engine,
+	}
 	cp.writermem.ResponseWriter = nil
 	cp.Writer = &cp.writermem
 	cp.index = abortIndex
@@ -224,21 +233,21 @@ func (c *Context) Error(err error) *Error {
 // Set is used to store a new key/value pair exclusively for this context.
 // It also lazy initializes  c.Keys if it was not used previously.
 func (c *Context) Set(key string, value interface{}) {
-	c.KeysMutex.Lock()
+	c.mu.Lock()
 	if c.Keys == nil {
 		c.Keys = make(map[string]interface{})
 	}
 
 	c.Keys[key] = value
-	c.KeysMutex.Unlock()
+	c.mu.Unlock()
 }
 
 // Get returns the value for the given key, ie: (value, true).
 // If the value does not exists it returns (nil, false)
 func (c *Context) Get(key string) (value interface{}, exists bool) {
-	c.KeysMutex.RLock()
+	c.mu.RLock()
 	value, exists = c.Keys[key]
-	c.KeysMutex.RUnlock()
+	c.mu.RUnlock()
 	return
 }
 
@@ -782,10 +791,15 @@ func (c *Context) GetRawData() ([]byte, error) {
 	return ioutil.ReadAll(c.Request.Body)
 }
 
+// SetSameSite with cookie
+func (c *Context) SetSameSite(samesite http.SameSite) {
+	c.sameSite = samesite
+}
+
 // SetCookie adds a Set-Cookie header to the ResponseWriter's headers.
 // The provided cookie must have a valid Name. Invalid cookies may be
 // silently dropped.
-func (c *Context) SetCookie(name, value string, maxAge int, path, domain string, sameSite http.SameSite, secure, httpOnly bool) {
+func (c *Context) SetCookie(name, value string, maxAge int, path, domain string, secure, httpOnly bool) {
 	if path == "" {
 		path = "/"
 	}
@@ -795,7 +809,7 @@ func (c *Context) SetCookie(name, value string, maxAge int, path, domain string,
 		MaxAge:   maxAge,
 		Path:     path,
 		Domain:   domain,
-		SameSite: sameSite,
+		SameSite: c.sameSite,
 		Secure:   secure,
 		HttpOnly: httpOnly,
 	})
