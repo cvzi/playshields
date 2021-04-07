@@ -192,7 +192,7 @@ func combineErrors(errorArr []error) (hasError bool, err error) {
 
 // errorJSON sends badge that shows the error message.
 func errorJSON(c *gin.Context, message string) {
-	c.JSON(http.StatusOK, gin.H{"schemaVersion": 1, "label": "error", "message": message})
+	c.JSON(http.StatusOK, gin.H{"schemaVersion": 1, "label": "error", "message": message, "isError" : true})
 }
 
 func main() {
