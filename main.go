@@ -192,7 +192,7 @@ func combineErrors(errorArr []error) (hasError bool, err error) {
 
 // errorJSON sends badge that shows the error message.
 func errorJSON(c *gin.Context, message string) {
-	c.JSON(http.StatusOK, gin.H{"schemaVersion": 1, "label": "error", "message": message, "isError" : true})
+	c.JSON(http.StatusOK, gin.H{"schemaVersion": 1, "label": "error", "message": message, "isError": true})
 }
 
 func main() {
@@ -219,9 +219,9 @@ func main() {
 	router.GET("/stats", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"schemaVersion": 1,
-			"label": "Status",
-			"message": fmt.Sprintf("%d apps with %d badges", htmlCache.Len(), jsonCache.Len()),
-			"cacheSeconds": 60})
+			"label":         "Status",
+			"message":       fmt.Sprintf("%d apps with %d badges", htmlCache.Len(), jsonCache.Len()),
+			"cacheSeconds":  60})
 	})
 	router.GET("/play", func(c *gin.Context) {
 		c.Header("Cache-Control", "max-age=10000")
