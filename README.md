@@ -1,5 +1,5 @@
 
-# playshields ![Status](https://img.shields.io/endpoint?color=3ad&style=for-the-badge&url=https%3A%2F%2Fplayshields.herokuapp.com%2Fstats)
+# playshields ![Status](https://img.shields.io/endpoint?color=3ad&style=for-the-badge&url=https%3A%2F%2Fplayshields.herokuapp.com%2Fstats) [![Go Report Card](https://goreportcard.com/badge/github.com/cvzi/playshields?style=for-the-badge)](https://goreportcard.com/report/github.com/cvzi/playshields)
 
 A Go app that offers JSON data for a [shields.io endpoint](https://shields.io/endpoint), which can easily be deployed to Heroku.
 
