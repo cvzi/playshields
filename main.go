@@ -195,12 +195,7 @@ func errorJSON(c *gin.Context, message string) {
 	c.JSON(http.StatusOK, gin.H{"schemaVersion": 1, "label": "error", "message": message, "isError": true})
 }
 
-func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		log.Fatal("$PORT must be set")
-	}
-
+func setupRouter() *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Logger())
 	router.LoadHTMLGlob("templates/*.tmpl.html")
@@ -266,6 +261,15 @@ func main() {
 			jsonCache.Set(cacheKey, cacheEntry)
 		}
 	})
+	return router
+}
 
+func main() {
+	port := os.Getenv("PORT")
+	if port == "" {
+		log.Fatal("$PORT must be set")
+	}
+
+	router := setupRouter()
 	router.Run(":" + port)
 }
