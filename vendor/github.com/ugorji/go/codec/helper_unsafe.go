@@ -79,6 +79,7 @@ const (
 	unsafeFlagEmbedRO  = 1 << 6
 	unsafeFlagIndir    = 1 << 7
 	unsafeFlagAddr     = 1 << 8
+	unsafeFlagRO       = unsafeFlagStickyRO | unsafeFlagEmbedRO
 	// unsafeFlagKindMask = (1 << 5) - 1 // 5 bits for 27 kinds (up to 31)
 	// unsafeTypeKindDirectIface = 1 << 5
 )
@@ -197,40 +198,36 @@ func byteSliceSameData(v1 []byte, v2 []byte) bool {
 	return (*unsafeSlice)(unsafe.Pointer(&v1)).Data == (*unsafeSlice)(unsafe.Pointer(&v2)).Data
 }
 
-// // fnloadFastpathUnderlying returns a fastpathE and underlying type
-// // for use in BasicHandle.fnload calls.
-// func (x *BasicHandle) fnloadFastpathUnderlying(ti *typeInfo) (f *fastpathE, u reflect.Type) {
-// 	// MARKER: in unsafe mode, we can convert between types with same shape,
-// 	// even if this is forbidden in normal go code.
-// 	//
-// 	// For map kind: check key and value (elem)
-// 	// for slice or array kind: check elem
-// 	// check is as below:
-// 	//   if no-custom-static-implement && no-registered-extension && type-is-scalar-or-byteslice &&
-// 	//   fastpath-to-deep-underlying-slice-or-map-exists, then use deep underlying.
-// 	//
-// 	// Concern is that the checks can be expensive, as we need to look up typeInfo for elem
-// 	// (and key if a map), and then look up whether extensions are registered for them, and then
-// 	// use reflect to create deep underlying type, and then check if a fastpath exists for it.
-// 	//
-// 	// The gain here is in the rare case where you have a custom type that has defined elem type
-// 	// which wraps a builtin type that we have a fastpath for.
-// 	// The gain doesn't justify the cost.
-// 	//
-// 	// Leae here in case the cost-analysis changes in the future.
+// MARKER: okBytesN functions will copy N bytes into the top slots of the return array.
+// These functions expect that the bounds are valid, and have been checked before this is called.
+// copy(...) does a number of checks which are unnecessary in this situation when in bounds.
 
-// 	return fnloadFastpathUnderlying(ti)
-// }
+func okBytes3(b []byte) (v [4]byte) {
+	*(*[3]byte)(unsafe.Pointer(&v[1])) = *((*[3]byte)(((*unsafeSlice)(unsafe.Pointer(&b))).Data))
+	return
+}
+
+func okBytes4(b []byte) [4]byte {
+	return *((*[4]byte)(((*unsafeSlice)(unsafe.Pointer(&b))).Data))
+}
+
+func okBytes8(b []byte) [8]byte {
+	return *((*[8]byte)(((*unsafeSlice)(unsafe.Pointer(&b))).Data))
+}
 
 // isNil says whether the value v is nil.
 // This applies to references like map/ptr/unsafepointer/chan/func,
 // and non-reference values like interface/slice.
 func isNil(v interface{}) (rv reflect.Value, isnil bool) {
 	var ui = (*unsafeIntf)(unsafe.Pointer(&v))
-	if ui.ptr == nil {
-		isnil = true
-		return
+	isnil = ui.ptr == nil
+	if !isnil {
+		rv, isnil = unsafeIsNilIntfOrSlice(ui, v)
 	}
+	return
+}
+
+func unsafeIsNilIntfOrSlice(ui *unsafeIntf, v interface{}) (rv reflect.Value, isnil bool) {
 	rv = reflect.ValueOf(v) // reflect.ValueOf is currently not inline'able - so call it directly
 	tk := rv.Kind()
 	isnil = (tk == reflect.Interface || tk == reflect.Slice) && *(*unsafe.Pointer)(ui.ptr) == nil
@@ -248,35 +245,11 @@ func rvRefPtr(v *unsafeReflectValue) unsafe.Pointer {
 	return v.ptr
 }
 
-// func rvAddr(rv reflect.Value) uintptr {
-// 	return uintptr((*unsafeReflectValue)(unsafe.Pointer(&rv)).ptr)
-// }
-
 func eq4i(i0, i1 interface{}) bool {
 	v0 := (*unsafeIntf)(unsafe.Pointer(&i0))
 	v1 := (*unsafeIntf)(unsafe.Pointer(&i1))
 	return v0.typ == v1.typ && v0.ptr == v1.ptr
 }
-
-// func rv4i(i interface{}) reflect.Value {
-// 	// Unfortunately, we cannot get the "kind" of the interface directly here.
-// 	// We need the 'rtype', whose structure changes in different go versions.
-// 	// Finally, it's not clear that there is benefit to reimplementing it,
-// 	// as the "escapes(i)" is not clearly expensive since we want i to exist on the heap.
-//
-// 	return reflect.ValueOf(i)
-// }
-
-// func rv4iK(i interface{}, kind byte, isref bool) (v reflect.Value) {
-// 	// Main advantage here is that it is inlined, nothing escapes to heap, i is never nil
-// 	uv := (*unsafeReflectValue)(unsafe.Pointer(&v))
-// 	uv.unsafeIntf = *(*unsafeIntf)(unsafe.Pointer(&i))
-// 	uv.flag = uintptr(kind)
-// 	if !isref {
-// 		uv.flag |= unsafeFlagIndir
-// 	}
-// 	return
-// }
 
 func rv4iptr(i interface{}) (v reflect.Value) {
 	// Main advantage here is that it is inlined, nothing escapes to heap, i is never nil
@@ -294,20 +267,6 @@ func rv4istr(i interface{}) (v reflect.Value) {
 	return
 }
 
-// func rv2ptr(urv *unsafeReflectValue) unsafe.Pointer {
-// 	if refBitset.isset(byte(urv.flag&unsafeFlagKindMask)) && urv.flag&unsafeFlagIndir != 0 {
-// 		return *(*unsafe.Pointer)(urv.ptr)
-// 	}
-// 	return urv.ptr
-// }
-
-// func rv2i(rv reflect.Value) interface{} {
-// 	// We tap into implememtation details from
-// 	// the source go stdlib reflect/value.go, and trims the implementation.
-// 	urv := (*unsafeReflectValue)(unsafe.Pointer(&rv))
-// 	return *(*interface{})(unsafe.Pointer(&unsafeIntf{typ: urv.typ, word: rv2ptr(urv)}))
-// }
-
 func rv2i(rv reflect.Value) (i interface{}) {
 	// We tap into implememtation details from
 	// the source go stdlib reflect/value.go, and trims the implementation.
@@ -321,6 +280,13 @@ func rv2i(rv reflect.Value) (i interface{}) {
 		urv.ptr = *(*unsafe.Pointer)(urv.ptr)
 	}
 	return *(*interface{})(unsafe.Pointer(&urv.unsafeIntf))
+}
+
+func rvAddr(rv reflect.Value, ptrType reflect.Type) reflect.Value {
+	urv := (*unsafeReflectValue)(unsafe.Pointer(&rv))
+	urv.flag = (urv.flag & unsafeFlagRO) | uintptr(reflect.Ptr)
+	urv.typ = ((*unsafeIntf)(unsafe.Pointer(&ptrType))).ptr
+	return rv
 }
 
 func rvIsNil(rv reflect.Value) bool {
@@ -392,16 +358,7 @@ func rvAddressableReadonly(v reflect.Value) reflect.Value {
 	uv := (*unsafeReflectValue)(unsafe.Pointer(&v))
 	uv.flag = uv.flag | unsafeFlagAddr // | unsafeFlagIndir
 
-	// callers of this only use it in read-only mode
-	// if uv.ptr == nil || uv.ptr == unsafeZeroAddr {
-	// 	uv.ptr = unsafeNew(uv.typ)
-	// }
-
 	return v
-
-	// rv := rvZeroAddrK(v.Type(), v.Kind())
-	// rvSetDirect(rv, v)
-	// return rv.Addr()
 }
 
 func rtsize2(rt unsafe.Pointer) uintptr {
@@ -428,22 +385,6 @@ func unsafeCmpZero(ptr unsafe.Pointer, size int) bool {
 	return *(*string)(unsafe.Pointer(&s1)) == *(*string)(unsafe.Pointer(&s2)) // memcmp
 }
 
-// MARKER: using builtins do not affect cost of an operation, while explicitly calling the
-// readlink'ed function is a function call that prevents inlining.
-//
-// func unsafeCmpZero(ptr unsafe.Pointer, size int) bool {
-// 	if size > len(unsafeZeroArr) {
-// 		return unsafeCmpZeroAlloc(ptr, size)
-// 	}
-// 	return *(*string)(unsafe.Pointer(&unsafeString{ptr, size})) ==
-// 		*(*string)(unsafe.Pointer(&unsafeString{unsafeZeroAddr, size}))
-// }
-//
-// func unsafeCmpZeroAlloc(ptr unsafe.Pointer, size int) bool {
-// 	return *(*string)(unsafe.Pointer(&unsafeString{ptr, size})) ==
-// 		*(*string)(unsafe.Pointer(&unsafeString{mallocgc(uintptr(size), nil, true), size}))
-// }
-
 func isEmptyValue(v reflect.Value, tinfos *TypeInfos, recursive bool) bool {
 	urv := (*unsafeReflectValue)(unsafe.Pointer(&v))
 	if urv.flag == 0 {
@@ -452,20 +393,7 @@ func isEmptyValue(v reflect.Value, tinfos *TypeInfos, recursive bool) bool {
 	if recursive {
 		return isEmptyValueFallbackRecur(urv, v, tinfos)
 	}
-	// t := rvPtrToType(urv.typ)
-	// // it is empty if it is a zero value OR it points to a zero value
-	// if urv.flag&unsafeFlagIndir == 0 { // this is a pointer
-	// 	if urv.ptr == nil {
-	// 		return true
-	// 	}
-	// 	return unsafeCmpZero(*(*unsafe.Pointer)(urv.ptr), int(rtsize(t.Elem())))
-	// }
-	// return unsafeCmpZero(urv.ptr, int(rtsize(t)))
-	// return unsafeCmpZero(urv.ptr, int(rtsize(rvPtrToType(urv.typ))))
-
-	// return unsafeCmpZero(urv.ptr, int(rtsize(rvType(v))))
 	return unsafeCmpZero(urv.ptr, int(rtsize2(urv.typ)))
-
 }
 
 func isEmptyValueFallbackRecur(urv *unsafeReflectValue, v reflect.Value, tinfos *TypeInfos) bool {
@@ -541,6 +469,34 @@ func isEmptyValueFallbackRecur(urv *unsafeReflectValue, v reflect.Value, tinfos 
 
 // --------------------------
 
+type structFieldInfos struct {
+	c      unsafe.Pointer // source
+	s      unsafe.Pointer // sorted
+	length int
+}
+
+func (x *structFieldInfos) load(source, sorted []*structFieldInfo) {
+	s := (*unsafeSlice)(unsafe.Pointer(&sorted))
+	x.s = s.Data
+	x.length = s.Len
+	s = (*unsafeSlice)(unsafe.Pointer(&source))
+	x.c = s.Data
+}
+
+func (x *structFieldInfos) sorted() (v []*structFieldInfo) {
+	*(*unsafeSlice)(unsafe.Pointer(&v)) = unsafeSlice{x.s, x.length, x.length}
+	// s := (*unsafeSlice)(unsafe.Pointer(&v))
+	// s.Data = x.sorted0
+	// s.Len = x.length
+	// s.Cap = s.Len
+	return
+}
+
+func (x *structFieldInfos) source() (v []*structFieldInfo) {
+	*(*unsafeSlice)(unsafe.Pointer(&v)) = unsafeSlice{x.c, x.length, x.length}
+	return
+}
+
 // atomicXXX is expected to be 2 words (for symmetry with atomic.Value)
 //
 // Note that we do not atomically load/store length and data pointer separately,
@@ -551,7 +507,6 @@ func isEmptyValueFallbackRecur(urv *unsafeReflectValue, v reflect.Value, tinfos 
 // ----------------------
 type atomicTypeInfoSlice struct {
 	v unsafe.Pointer // *[]rtid2ti
-	// _ uint64         // padding (atomicXXX expected to be 2 words)
 }
 
 func (x *atomicTypeInfoSlice) load() (s []rtid2ti) {
@@ -769,25 +724,20 @@ func rvSetUint64(rv reflect.Value, v uint64) {
 
 // ----------------
 
-// rvSet is rv.Set for all kinds, including reflect.Interface.
-func rvSet(rv reflect.Value, v reflect.Value) {
-	if rv.Kind() == reflect.Interface {
-		rv.Set(v)
-	} else {
-		rvSetDirect(rv, v)
-	}
-}
-
 // rvSetZero is rv.Set(reflect.Zero(rv.Type()) for all kinds (including reflect.Interface).
 func rvSetZero(rv reflect.Value) {
 	rvSetDirectZero(rv)
 }
 
+func rvSetIntf(rv reflect.Value, v reflect.Value) {
+	rv.Set(v)
+}
+
 // rvSetDirect is rv.Set for all kinds except reflect.Interface.
 //
-// Callers MUST not pass an interface value in, as it may result in an unexpected segfaults.
+// Callers MUST not pass a value of kind reflect.Interface, as it may cause unexpected segfaults.
 func rvSetDirect(rv reflect.Value, v reflect.Value) {
-	// MARKER: rv.Set for interface may need to do a separate allocation if a scalar value.
+	// MARKER: rv.Set for kind reflect.Interface may do a separate allocation if a scalar value.
 	// The book-keeping is onerous, so we just do the simple ones where a memmove is sufficient.
 	urv := (*unsafeReflectValue)(unsafe.Pointer(&rv))
 	uv := (*unsafeReflectValue)(unsafe.Pointer(&v))
@@ -809,18 +759,6 @@ func rvSetDirectZero(rv reflect.Value) {
 		typedmemclr(urv.typ, urv.ptr)
 	}
 }
-
-// // rvSlice returns a slice of the slice of lenth
-// func rvSlice(rv reflect.Value, length int) (v reflect.Value) {
-// 	urv := (*unsafeReflectValue)(unsafe.Pointer(&rv))
-// 	uv := (*unsafeReflectValue)(unsafe.Pointer(&v))
-// 	*uv = *urv
-// 	var x []unsafe.Pointer
-// 	uv.ptr = unsafe.Pointer(&x)
-// 	*(*unsafeSlice)(uv.ptr) = *(*unsafeSlice)(urv.ptr)
-// 	(*unsafeSlice)(uv.ptr).Len = length
-// 	return
-// }
 
 // rvMakeSlice updates the slice to point to a new array.
 // It copies data from old slice to new slice.
@@ -853,11 +791,11 @@ func rvSlice(rv reflect.Value, length int) reflect.Value {
 // rcGrowSlice updates the slice to point to a new array with the cap incremented, and len set to the new cap value.
 // It copies data from old slice to new slice.
 // It returns set=true iff it updates it, else it just returns a new slice pointing to a newly made array.
-func rvGrowSlice(rv reflect.Value, ti *typeInfo, xcap, incr int) (v reflect.Value, newcap int, set bool) {
+func rvGrowSlice(rv reflect.Value, ti *typeInfo, cap, incr int) (v reflect.Value, newcap int, set bool) {
 	urv := (*unsafeReflectValue)(unsafe.Pointer(&rv))
 	ux := (*unsafeSlice)(urv.ptr)
 	t := ((*unsafeIntf)(unsafe.Pointer(&ti.elem))).ptr
-	*ux = unsafeGrowslice(t, *ux, xcap, incr)
+	*ux = unsafeGrowslice(t, *ux, cap, incr)
 	ux.Len = ux.Cap
 	return rv, ux.Cap, true
 }
@@ -1058,8 +996,7 @@ func rvLenMap(rv reflect.Value) int {
 }
 
 // Note: it is hard to find len(...) of an array type,
-// as that is a field in the arrayType representing the array,
-// and hard to introspect.
+// as that is a field in the arrayType representing the array, and hard to introspect.
 //
 // func rvLenArray(rv reflect.Value) int {	return rv.Len() }
 
@@ -1177,15 +1114,6 @@ func mapRange(t *mapIter, m, k, v reflect.Value, mapvalues bool) {
 		t.v = reflect.Value{}
 	}
 }
-
-// // unsafeMapSet does equivalent of: p = p2
-// func unsafeMapSet(ptyp, p, p2 unsafe.Pointer, isref bool) {
-// 	if isref {
-// 		*(*unsafe.Pointer)(p) = *(*unsafe.Pointer)(p2) // p2
-// 	} else {
-// 		typedmemmove(ptyp, p, p2) // *(*unsafe.Pointer)(p2)) // p2)
-// 	}
-// }
 
 // unsafeMapKVPtr returns the pointer if flagIndir, else it returns a pointer to the pointer.
 // It is needed as maps always keep a reference to the underlying value.
@@ -1321,9 +1249,18 @@ func unsafeNew(typ unsafe.Pointer) unsafe.Pointer {
 //
 //   We checked this by going into $GOROOT/src/runtime and running:
 //   $ go build -tags codec.notfastpath -gcflags "-m=2"
-//
-// Also, we link to the functions in reflect where possible, as opposed to those in runtime.
-// They are guaranteed to be safer for our use, even when they are just trampoline functions.
+
+// reflect.{unsafe_New, unsafe_NewArray} are not supported in gollvm,
+// failing with "error: undefined reference" error.
+// however, runtime.{mallocgc, newarray} are supported, so use that instead.
+
+//go:linkname mallocgc runtime.mallocgc
+//go:noescape
+func mallocgc(size uintptr, typ unsafe.Pointer, needzero bool) unsafe.Pointer
+
+//go:linkname newarray runtime.newarray
+//go:noescape
+func newarray(typ unsafe.Pointer, n int) unsafe.Pointer
 
 //go:linkname mapiterinit runtime.mapiterinit
 //go:noescape
@@ -1333,9 +1270,23 @@ func mapiterinit(typ unsafe.Pointer, m unsafe.Pointer, it unsafe.Pointer)
 //go:noescape
 func mapiternext(it unsafe.Pointer) (key unsafe.Pointer)
 
-//go:linkname mapdelete reflect.mapdelete
+//go:linkname mapdelete runtime.mapdelete
 //go:noescape
 func mapdelete(typ unsafe.Pointer, m unsafe.Pointer, key unsafe.Pointer)
+
+//go:linkname mapassign runtime.mapassign
+//go:noescape
+func mapassign(typ unsafe.Pointer, m unsafe.Pointer, key unsafe.Pointer) unsafe.Pointer
+
+//go:linkname mapaccess2 runtime.mapaccess2
+//go:noescape
+func mapaccess2(typ unsafe.Pointer, m unsafe.Pointer, key unsafe.Pointer) (val unsafe.Pointer, ok bool)
+
+// reflect.typed{memmove, memclr, slicecopy} will handle checking if the type has pointers or not,
+// and if a writeBarrier is needed, before delegating to the right method in the runtime.
+//
+// This is why we use the functions in reflect, and not the ones in runtime directly.
+// Calling runtime.XXX here will lead to memory issues.
 
 //go:linkname typedslicecopy reflect.typedslicecopy
 //go:noescape
@@ -1348,58 +1299,3 @@ func typedmemmove(typ unsafe.Pointer, dst, src unsafe.Pointer)
 //go:linkname typedmemclr reflect.typedmemclr
 //go:noescape
 func typedmemclr(typ unsafe.Pointer, dst unsafe.Pointer)
-
-//go:linkname mallocgc runtime.mallocgc
-//go:noescape
-func mallocgc(size uintptr, typ unsafe.Pointer, needzero bool) unsafe.Pointer
-
-//go:linkname newarray runtime.newarray
-//go:noescape
-func newarray(typ unsafe.Pointer, n int) unsafe.Pointer
-
-// runtime.memmove is a stub implemented in assembly, and will not work across compilers.
-// Instead, we use the function wrapper linked in reflect i.e. reflect.memmove.
-
-//go:linkname memmove reflect.memmove
-//go:noescape
-func memmove(dst, src unsafe.Pointer, length uintptr)
-
-/*
-
-//go:linkname maplen reflect.maplen
-//go:noescape
-func maplen(typ unsafe.Pointer) int
-
-//go:linkname chanlen reflect.chanlen
-//go:noescape
-func chanlen(typ unsafe.Pointer) int
-
-//go:linkname reflect_mapiterinit reflect.mapiterinit
-//go:noescape
-func reflect_mapiterinit(typ unsafe.Pointer, m unsafe.Pointer) (it unsafe.Pointer)
-
-//go:linkname reflect_mapaccess reflect.mapaccess
-//go:noescape
-func reflect_mapaccess(typ unsafe.Pointer, m unsafe.Pointer, key unsafe.Pointer) (val unsafe.Pointer)
-
-//go:linkname reflect_mapassign reflect.mapassign
-//go:noescape
-func reflect_mapassign(typ unsafe.Pointer, m unsafe.Pointer, key, val unsafe.Pointer)
-
-//go:linkname memhash runtime.memhash
-//go:noescape
-func memhash(p unsafe.Pointer, seed, length uintptr) uintptr
-
-// ---------- others ---------------
-
-func hashShortString(b []byte) uintptr {
-	return memhash(unsafe.Pointer(&b[0]), 0, uintptr(len(b)))
-}
-
-func rtsize(rt reflect.Type) uintptr {
-	return ((*unsafeRuntimeType)(((*unsafeIntf)(unsafe.Pointer(&rt))).ptr)).size
-}
-
-// var _ = runtime.MemProfileRate
-
-*/

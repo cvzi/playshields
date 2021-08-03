@@ -148,7 +148,8 @@ import (
 // v22: 20210118 fixed issue in generated code when encoding a type which is also a codec.Selfer
 // v23: 20210203 changed slice/map types for which we generate fast-path functions
 // v24: 20210226 robust handling for Canonical|CheckCircularRef flags and MissingFielder implementations
-const genVersion = 24
+// v25: 20210406 pass base reflect.Type to side(En|De)code and (En|De)codeExt calls
+const genVersion = 25
 
 const (
 	genCodecPkg        = "codec1978" // MARKER: keep in sync with codecgen/gen.go
@@ -685,7 +686,7 @@ func (x *genRunner) tryGenIsZero(t reflect.Type) (done bool) {
 	delete(x.ty, t)
 
 	ti := x.ti.get(rtid, t)
-	tisfi := ti.sfiSrc // always use sequence from file. decStruct expects same thing.
+	tisfi := ti.sfi.source() // always use sequence from file. decStruct expects same thing.
 	varname := genTopLevelVarName
 
 	x.linef("func (%s *%s) IsCodecEmpty() bool {", varname, x.genTypeName(t))
@@ -1201,7 +1202,7 @@ func (x *genRunner) encStruct(varname string, rtid uintptr, t reflect.Type) {
 	ti2arrayvar := genTempVarPfx + "r" + i
 	struct2arrvar := genTempVarPfx + "2arr" + i
 
-	tisfi := ti.sfiSrc // always use sequence from file. decStruct expects same thing.
+	tisfi := ti.sfi.source() // always use sequence from file. decStruct expects same thing.
 
 	type genFQN struct {
 		i       string
@@ -1379,9 +1380,9 @@ func (x *genRunner) encStruct(varname string, rtid uintptr, t reflect.Type) {
 
 		if genStructCanonical {
 			x.linef("if z.EncBasicHandle().Canonical {") // if Canonical block
-			fn(ti.sfiSort)
+			fn(ti.sfi.sorted())
 			x.linef("} else {") // else !cononical block
-			fn(ti.sfiSrc)
+			fn(ti.sfi.source())
 			x.linef("}") // end if Canonical block
 		} else {
 			fn(tisfi)
@@ -1425,11 +1426,17 @@ func (x *genRunner) encListFallback(varname string, t reflect.Type) {
 	}
 
 	x.line("z.EncWriteArrayStart(len(" + varname + "))")
-	x.linef("for _, %sv%s := range %s {", genTempVarPfx, i, varname)
-	x.linef("z.EncWriteArrayElem()")
 
-	x.encVar(genTempVarPfx+"v"+i, t.Elem())
+	// x.linef("for _, %sv%s := range %s {", genTempVarPfx, i, varname)
+	// x.linef("z.EncWriteArrayElem()")
+	// x.encVar(genTempVarPfx+"v"+i, t.Elem())
+	// x.line("}")
+
+	x.linef("for %sv%s := range %s {", genTempVarPfx, i, varname)
+	x.linef("z.EncWriteArrayElem()")
+	x.encVar(fmt.Sprintf("%s[%sv%s]", varname, genTempVarPfx, i), t.Elem())
 	x.line("}")
+
 	x.line("z.EncWriteArrayEnd()")
 	if t.Kind() == reflect.Chan {
 		x.line("}")
@@ -1918,7 +1925,7 @@ func (x *genRunner) decMapFallback(varname string, rtid uintptr, t reflect.Type)
 
 func (x *genRunner) decStructMapSwitch(kName string, varname string, rtid uintptr, t reflect.Type) {
 	ti := x.ti.get(rtid, t)
-	tisfi := ti.sfiSrc // always use sequence from file. decStruct expects same thing.
+	tisfi := ti.sfi.source() // always use sequence from file. decStruct expects same thing.
 	x.line("switch string(" + kName + ") {")
 	var newbuf, nilbuf genBuf
 	for _, si := range tisfi {
@@ -1981,7 +1988,7 @@ func (x *genRunner) decStructArray(varname, lenvarname, breakString string, rtid
 	tpfx := genTempVarPfx
 	i := x.varsfx()
 	ti := x.ti.get(rtid, t)
-	tisfi := ti.sfiSrc // always use sequence from file. decStruct expects same thing.
+	tisfi := ti.sfi.source() // always use sequence from file. decStruct expects same thing.
 	x.linef("var %sj%s int", tpfx, i)
 	x.linef("var %sb%s bool", tpfx, i)                        // break
 	x.linef("var %shl%s bool = %s >= 0", tpfx, i, lenvarname) // has length

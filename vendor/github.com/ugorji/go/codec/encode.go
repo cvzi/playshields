@@ -28,7 +28,7 @@ type encDriver interface {
 	EncodeFloat32(f float32)
 	EncodeFloat64(f float64)
 	EncodeRawExt(re *RawExt)
-	EncodeExt(v interface{}, xtag uint64, ext Ext)
+	EncodeExt(v interface{}, basetype reflect.Type, xtag uint64, ext Ext)
 	// EncodeString using cUTF8, honor'ing StringToRaw flag
 	EncodeString(v string)
 	EncodeStringBytesRaw(v []byte)
@@ -40,8 +40,6 @@ type encDriver interface {
 
 	// reset will reset current encoding runtime state, and cached information from the handle
 	reset()
-
-	// atEndOfEncode()
 
 	encoder() *Encoder
 
@@ -169,6 +167,14 @@ type EncodeOptions struct {
 	// to store a float64 as a half float. Doing this check has a small performance cost,
 	// but the benefit is that the encoded message will be smaller.
 	OptimumSize bool
+
+	// NoAddressableReadonly controls whether we try to force a non-addressable value
+	// to be addressable so we can call a pointer method on it e.g. for types
+	// that support Selfer, json.Marshaler, etc.
+	//
+	// Use it in the very rare occurrence that your types modify a pointer value when calling
+	// an encode callback function e.g. JsonMarshal, TextMarshal, BinaryMarshal or CodecEncodeSelf.
+	NoAddressableReadonly bool
 }
 
 // ---------------------------------------------
@@ -178,7 +184,7 @@ func (e *Encoder) rawExt(f *codecFnInfo, rv reflect.Value) {
 }
 
 func (e *Encoder) ext(f *codecFnInfo, rv reflect.Value) {
-	e.e.EncodeExt(rv2i(rv), f.xfTag, f.xfFn)
+	e.e.EncodeExt(rv2i(rv), f.ti.rt, f.xfTag, f.xfFn)
 }
 
 func (e *Encoder) selferMarshal(f *codecFnInfo, rv reflect.Value) {
@@ -328,9 +334,8 @@ func (e *Encoder) kSeqFn(rtelem reflect.Type) (fn *codecFn) {
 	for rtelem.Kind() == reflect.Ptr {
 		rtelem = rtelem.Elem()
 	}
-	// if kind is reflect.Interface, do not pre-determine the
-	// encoding type, because preEncodeValue may break it down to
-	// a concrete type and kInterface will bomb.
+	// if kind is reflect.Interface, do not pre-determine the encoding type,
+	// because preEncodeValue may break it down to a concrete type and kInterface will bomb.
 	if rtelem.Kind() != reflect.Interface {
 		fn = e.h.fn(rtelem)
 	}
@@ -445,13 +450,8 @@ func (e *Encoder) kSliceBytesChan(rv reflect.Value) {
 	// do not use range, so that the number of elements encoded
 	// does not change, and encoding does not hang waiting on someone to close chan.
 
-	// for b := range rv2i(rv).(<-chan byte) { bs = append(bs, b) }
-	// ch := rv2i(rv).(<-chan byte) // fix error - that this is a chan byte, not a <-chan byte.
-
-	// bs := e.b[:0]
 	bs0 := e.blist.peek(32, true)
 	bs := bs0
-	// cap0 := cap(bs)
 
 	irv := rv2i(rv)
 	ch, ok := irv.(<-chan byte)
@@ -496,25 +496,28 @@ L1:
 
 func (e *Encoder) kStructSfi(f *codecFnInfo) []*structFieldInfo {
 	if e.h.Canonical {
-		return f.ti.sfiSort
+		return f.ti.sfi.sorted()
 	}
-	return f.ti.sfiSrc
+	return f.ti.sfi.source()
 }
 
 func (e *Encoder) kStructNoOmitempty(f *codecFnInfo, rv reflect.Value) {
+	var tisfi []*structFieldInfo
 	if f.ti.toArray || e.h.StructToArray { // toArray
-		e.arrayStart(len(f.ti.sfiSrc))
-		for _, si := range f.ti.sfiSrc {
+		tisfi = f.ti.sfi.source()
+		e.arrayStart(len(tisfi))
+		for _, si := range tisfi {
 			e.arrayElem()
 			e.encodeValue(si.path.field(rv), nil)
 		}
 		e.arrayEnd()
 	} else {
-		tisfi := e.kStructSfi(f)
+		tisfi = e.kStructSfi(f)
 		e.mapStart(len(tisfi))
+		keytyp := f.ti.keyType
 		for _, si := range tisfi {
 			e.mapElemKey()
-			e.kStructFieldKey(f.ti.keyType, si.path.encNameAsciiAlphaNum, si.encName)
+			e.kStructFieldKey(keytyp, si.path.encNameAsciiAlphaNum, si.encName)
 			e.mapElemValue()
 			e.encodeValue(si.path.field(rv), nil)
 		}
@@ -528,25 +531,21 @@ func (e *Encoder) kStructFieldKey(keyType valueType, encNameAsciiAlphaNum bool, 
 
 func (e *Encoder) kStruct(f *codecFnInfo, rv reflect.Value) {
 	var newlen int
-	toMap := !(f.ti.toArray || e.h.StructToArray)
+	ti := f.ti
+	toMap := !(ti.toArray || e.h.StructToArray)
 	var mf map[string]interface{}
-	if f.ti.flagMissingFielder {
+	if ti.flagMissingFielder {
 		mf = rv2i(rv).(MissingFielder).CodecMissingFields()
 		toMap = true
 		newlen += len(mf)
-	} else if f.ti.flagMissingFielderPtr {
-		if rv.CanAddr() {
-			mf = rv2i(rv.Addr()).(MissingFielder).CodecMissingFields()
-		} else {
-			// make a new addressable value of same one, and use it
-			rv2 := reflect.New(rvType(rv))
-			rvSetDirect(rv2.Elem(), rv)
-			mf = rv2i(rv2).(MissingFielder).CodecMissingFields()
-		}
+	} else if ti.flagMissingFielderPtr {
+		rv2 := e.addrRV(rv, ti.rt, ti.ptr)
+		mf = rv2i(rv2).(MissingFielder).CodecMissingFields()
 		toMap = true
 		newlen += len(mf)
 	}
-	newlen += len(f.ti.sfiSrc)
+	tisfi := ti.sfi.source()
+	newlen += len(tisfi)
 
 	var fkvs = e.slist.get(newlen)[:newlen]
 
@@ -573,7 +572,7 @@ func (e *Encoder) kStruct(f *codecFnInfo, rv reflect.Value) {
 				if k == "" {
 					continue
 				}
-				if f.ti.infoFieldOmitempty && isEmptyValue(reflect.ValueOf(v), e.h.TypeInfos, recur) {
+				if ti.infoFieldOmitempty && isEmptyValue(reflect.ValueOf(v), e.h.TypeInfos, recur) {
 					continue
 				}
 				mf2s = append(mf2s, stringIntf{k, v})
@@ -599,7 +598,7 @@ func (e *Encoder) kStruct(f *codecFnInfo, rv reflect.Value) {
 			sort.Sort((encStructFieldObjSlice)(mf2w))
 			for _, v := range mf2w {
 				e.mapElemKey()
-				e.kStructFieldKey(f.ti.keyType, v.ascii, v.key)
+				e.kStructFieldKey(ti.keyType, v.ascii, v.key)
 				e.mapElemValue()
 				if v.isRv {
 					e.encodeValue(v.rv, nil)
@@ -608,16 +607,17 @@ func (e *Encoder) kStruct(f *codecFnInfo, rv reflect.Value) {
 				}
 			}
 		} else {
+			keytyp := ti.keyType
 			for j = 0; j < newlen; j++ {
 				kv = fkvs[j]
 				e.mapElemKey()
-				e.kStructFieldKey(f.ti.keyType, kv.v.path.encNameAsciiAlphaNum, kv.v.encName)
+				e.kStructFieldKey(keytyp, kv.v.path.encNameAsciiAlphaNum, kv.v.encName)
 				e.mapElemValue()
 				e.encodeValue(kv.r, nil)
 			}
 			for _, v := range mf2s {
 				e.mapElemKey()
-				e.kStructFieldKey(f.ti.keyType, false, v.v)
+				e.kStructFieldKey(keytyp, false, v.v)
 				e.mapElemValue()
 				e.encode(v.i)
 			}
@@ -625,8 +625,8 @@ func (e *Encoder) kStruct(f *codecFnInfo, rv reflect.Value) {
 
 		e.mapEnd()
 	} else {
-		newlen = len(f.ti.sfiSrc)
-		for i, si := range f.ti.sfiSrc { // use unsorted array (to match sequence in struct)
+		newlen = len(tisfi)
+		for i, si := range tisfi { // use unsorted array (to match sequence in struct)
 			kv.r = si.path.field(rv)
 			// use the zero value.
 			// if a reference or struct, set to nil (so you do not output too much)
@@ -671,8 +671,8 @@ func (e *Encoder) kMap(f *codecFnInfo, rv reflect.Value) {
 
 	var keyFn, valFn *codecFn
 
-	ktypeKind := f.ti.key.Kind()
-	vtypeKind := f.ti.elem.Kind()
+	ktypeKind := reflect.Kind(f.ti.keykind)
+	vtypeKind := reflect.Kind(f.ti.elemkind)
 
 	rtval := f.ti.elem
 	rtvalkind := vtypeKind
@@ -728,11 +728,10 @@ func (e *Encoder) kMapCanonical(ti *typeInfo, rv, rvv reflect.Value, valFn *code
 	// This is not necessary, as the natural kind is sufficient for ordering.
 
 	rtkey := ti.key
-	// rtval := ti.elem
 	mks := rv.MapKeys()
 	rtkeyKind := rtkey.Kind()
 	kfast := mapKeyFastKindFor(rtkeyKind)
-	visindirect := ti.elemsize > mapMaxElemSize
+	visindirect := mapStoresElemIndirect(uintptr(ti.elemsize))
 	visref := refBitset.isset(ti.elemkind)
 
 	switch rtkeyKind {
@@ -927,10 +926,6 @@ type Encoder struct {
 	perType encPerType
 
 	slist sfiRvFreelist
-
-	// b [1 * 8]byte // for encoding chan byte, (non-addressable) [N]byte, etc
-
-	// ---- cpu cache line boundary?
 }
 
 // NewEncoder returns an Encoder for encoding into an io.Writer.
@@ -1279,7 +1274,6 @@ TOP:
 		goto TOP
 	case reflect.Struct:
 		if rvpValid && e.h.CheckCircularRef {
-			// sptr = rvAddr(rv) // use rv, not rvp, as rvAddr gives ptr to the data rv
 			sptr = rv2i(rvp)
 			for _, vv := range e.ci {
 				if eq4i(sptr, vv) { // error if sptr already seen
@@ -1298,27 +1292,35 @@ TOP:
 		return
 	}
 
-	var rt reflect.Type
 	if fn == nil {
-		rt = rvType(rv)
-		fn = e.h.fn(rt)
+		fn = e.h.fn(rvType(rv))
 	}
 
 	if !fn.i.addrE { // typically, addrE = false, so check it first
-		fn.fe(e, &fn.i, rv)
+		// keep rv same
 	} else if rvpValid {
-		fn.fe(e, &fn.i, rvp)
-	} else if rv.CanAddr() {
-		fn.fe(e, &fn.i, rv.Addr())
-	} else if fn.i.addrEf {
-		fn.fe(e, &fn.i, e.perType.AddressableRO(rv).Addr())
+		rv = rvp
 	} else {
-		fn.fe(e, &fn.i, rv)
+		rv = e.addrRV(rv, fn.i.ti.rt, fn.i.ti.ptr)
 	}
+	fn.fe(e, &fn.i, rv)
 
 	if sptr != nil { // remove sptr
 		e.ci = e.ci[:len(e.ci)-1]
 	}
+}
+
+// addrRV returns a addressable value which may be readonly
+func (e *Encoder) addrRV(rv reflect.Value, typ, ptrType reflect.Type) (rva reflect.Value) {
+	if rv.CanAddr() {
+		return rvAddr(rv, ptrType)
+	}
+	if e.h.NoAddressableReadonly {
+		rva = reflect.New(typ)
+		rvSetDirect(rva.Elem(), rv)
+		return
+	}
+	return rvAddr(e.perType.AddressableRO(rv), ptrType)
 }
 
 func (e *Encoder) marshalUtf8(bs []byte, fnerr error) {
@@ -1420,10 +1422,10 @@ func (e *Encoder) atEndOfEncode() {
 	}
 }
 
-func (e *Encoder) sideEncode(v interface{}, bs *[]byte) {
+func (e *Encoder) sideEncode(v interface{}, basetype reflect.Type, bs *[]byte) {
 	// rv := baseRV(v)
 	// e2 := NewEncoderBytes(bs, e.hh)
-	// e2.encodeValue(rv, e2.h.fnNoExt(rvType(rv)))
+	// e2.encodeValue(rv, e2.h.fnNoExt(basetype))
 	// e2.atEndOfEncode()
 	// e2.w().end()
 
@@ -1441,7 +1443,7 @@ func (e *Encoder) sideEncode(v interface{}, bs *[]byte) {
 
 	// must call using fnNoExt
 	rv := baseRV(v)
-	e.encodeValue(rv, e.h.fnNoExt(rvType(rv)))
+	e.encodeValue(rv, e.h.fnNoExt(basetype))
 	e.atEndOfEncode()
 	e.w().end()
 }
