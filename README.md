@@ -31,7 +31,7 @@ $ run.bat
 
 ```sh
 $ heroku create
-$ heroku config:set GOVERSION=go1.14.1
+$ heroku config:set GOVERSION=go1.17.3
 $ heroku config:set GIN_MODE=release
 $ git push heroku master
 $ heroku open
