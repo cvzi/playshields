@@ -1,4 +1,4 @@
-FROM heroku/heroku:20-build as build
+FROM heroku/heroku:22-build as build
 
 COPY . /app
 WORKDIR /app
@@ -11,7 +11,7 @@ RUN curl https://codon-buildpacks.s3.amazonaws.com/buildpacks/heroku/go.tgz | ta
 RUN STACK=heroku-20 /tmp/buildpack/heroku/go/bin/compile /app /tmp/build_cache /tmp/env
 
 # Prepare final, minimal image
-FROM heroku/heroku:20
+FROM heroku/heroku:22
 
 COPY --from=build /app /app
 ENV HOME /app
