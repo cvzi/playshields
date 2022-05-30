@@ -35,12 +35,14 @@ type htmlCacheEntry struct {
 	errorStr string
 }
 
-type placeHolderGetter func(string, []string) (string, error)
-type placeHolder struct {
-	placeHolderGetter placeHolderGetter
-	param             string
-	description       string
-}
+type (
+	placeHolderGetter func(string, []string) (string, error)
+	placeHolder       struct {
+		placeHolderGetter placeHolderGetter
+		param             string
+		description       string
+	}
+)
 
 var playStorePlaceHolders map[string]placeHolder
 
@@ -208,7 +210,8 @@ func setupRouter() *gin.Engine {
 			"appid":        c.DefaultQuery("appid", ""),
 			"label":        c.DefaultQuery("label", "Android"),
 			"message":      c.DefaultQuery("message", "$version"),
-			"placeholders": playStoreDescriptions}
+			"placeholders": playStoreDescriptions,
+		}
 		c.HTML(http.StatusOK, "index.tmpl.html", templateValues)
 	})
 	router.GET("/stats", func(c *gin.Context) {
@@ -216,7 +219,8 @@ func setupRouter() *gin.Engine {
 			"schemaVersion": 1,
 			"label":         "Status",
 			"message":       fmt.Sprintf("%d apps with %d badges", htmlCache.Len(), jsonCache.Len()),
-			"cacheSeconds":  60})
+			"cacheSeconds":  60,
+		})
 	})
 	router.GET("/play", func(c *gin.Context) {
 		c.Header("Cache-Control", "max-age=10000")
