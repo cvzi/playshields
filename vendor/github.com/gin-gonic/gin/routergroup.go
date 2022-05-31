@@ -1,4 +1,4 @@
-// Copyright 2014 Manu Martinez-Almeida. All rights reserved.
+// Copyright 2014 Manu Martinez-Almeida.  All rights reserved.
 // Use of this source code is governed by a MIT style
 // license that can be found in the LICENSE file.
 
@@ -9,18 +9,6 @@ import (
 	"path"
 	"regexp"
 	"strings"
-)
-
-var (
-	// regEnLetter matches english letters for http method name
-	regEnLetter = regexp.MustCompile("^[A-Z]+$")
-
-	// anyMethods for RouterGroup Any method
-	anyMethods = []string{
-		http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch,
-		http.MethodHead, http.MethodOptions, http.MethodDelete, http.MethodConnect,
-		http.MethodTrace,
-	}
 )
 
 // IRouter defines all router handle interface includes single and group router.
@@ -44,7 +32,6 @@ type IRoutes interface {
 	HEAD(string, ...HandlerFunc) IRoutes
 
 	StaticFile(string, string) IRoutes
-	StaticFileFS(string, string, http.FileSystem) IRoutes
 	Static(string, string) IRoutes
 	StaticFS(string, http.FileSystem) IRoutes
 }
@@ -100,7 +87,7 @@ func (group *RouterGroup) handle(httpMethod, relativePath string, handlers Handl
 // frequently used, non-standardized or custom methods (e.g. for internal
 // communication with a proxy).
 func (group *RouterGroup) Handle(httpMethod, relativePath string, handlers ...HandlerFunc) IRoutes {
-	if matched := regEnLetter.MatchString(httpMethod); !matched {
+	if matches, err := regexp.MatchString("^[A-Z]+$", httpMethod); !matches || err != nil {
 		panic("http method " + httpMethod + " is not valid")
 	}
 	return group.handle(httpMethod, relativePath, handlers)
@@ -144,33 +131,26 @@ func (group *RouterGroup) HEAD(relativePath string, handlers ...HandlerFunc) IRo
 // Any registers a route that matches all the HTTP methods.
 // GET, POST, PUT, PATCH, HEAD, OPTIONS, DELETE, CONNECT, TRACE.
 func (group *RouterGroup) Any(relativePath string, handlers ...HandlerFunc) IRoutes {
-	for _, method := range anyMethods {
-		group.handle(method, relativePath, handlers)
-	}
-
+	group.handle(http.MethodGet, relativePath, handlers)
+	group.handle(http.MethodPost, relativePath, handlers)
+	group.handle(http.MethodPut, relativePath, handlers)
+	group.handle(http.MethodPatch, relativePath, handlers)
+	group.handle(http.MethodHead, relativePath, handlers)
+	group.handle(http.MethodOptions, relativePath, handlers)
+	group.handle(http.MethodDelete, relativePath, handlers)
+	group.handle(http.MethodConnect, relativePath, handlers)
+	group.handle(http.MethodTrace, relativePath, handlers)
 	return group.returnObj()
 }
 
 // StaticFile registers a single route in order to serve a single file of the local filesystem.
 // router.StaticFile("favicon.ico", "./resources/favicon.ico")
 func (group *RouterGroup) StaticFile(relativePath, filepath string) IRoutes {
-	return group.staticFileHandler(relativePath, func(c *Context) {
-		c.File(filepath)
-	})
-}
-
-// StaticFileFS works just like `StaticFile` but a custom `http.FileSystem` can be used instead..
-// router.StaticFileFS("favicon.ico", "./resources/favicon.ico", Dir{".", false})
-// Gin by default user: gin.Dir()
-func (group *RouterGroup) StaticFileFS(relativePath, filepath string, fs http.FileSystem) IRoutes {
-	return group.staticFileHandler(relativePath, func(c *Context) {
-		c.FileFromFS(filepath, fs)
-	})
-}
-
-func (group *RouterGroup) staticFileHandler(relativePath string, handler HandlerFunc) IRoutes {
 	if strings.Contains(relativePath, ":") || strings.Contains(relativePath, "*") {
 		panic("URL parameters can not be used when serving a static file")
+	}
+	handler := func(c *Context) {
+		c.File(filepath)
 	}
 	group.GET(relativePath, handler)
 	group.HEAD(relativePath, handler)
@@ -229,7 +209,9 @@ func (group *RouterGroup) createStaticHandler(relativePath string, fs http.FileS
 
 func (group *RouterGroup) combineHandlers(handlers HandlersChain) HandlersChain {
 	finalSize := len(group.Handlers) + len(handlers)
-	assert1(finalSize < int(abortIndex), "too many handlers")
+	if finalSize >= int(abortIndex) {
+		panic("too many handlers")
+	}
 	mergedHandlers := make(HandlersChain, finalSize)
 	copy(mergedHandlers, group.Handlers)
 	copy(mergedHandlers[len(group.Handlers):], handlers)

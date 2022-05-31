@@ -82,7 +82,7 @@ BEGIN:
 		fld := namespace
 		var ns string
 
-		if !typ.ConvertibleTo(timeType) {
+		if typ != timeType {
 
 			idx := strings.Index(namespace, namespaceSeparator)
 

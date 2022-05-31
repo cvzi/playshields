@@ -1,4 +1,4 @@
-// Copyright 2014 Manu Martinez-Almeida. All rights reserved.
+// Copyright 2014 Manu Martinez-Almeida.  All rights reserved.
 // Use of this source code is governed by a MIT style
 // license that can be found in the LICENSE file.
 
@@ -6,7 +6,6 @@ package gin
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -28,14 +27,14 @@ var (
 )
 
 // RecoveryFunc defines the function passable to CustomRecovery.
-type RecoveryFunc func(c *Context, err any)
+type RecoveryFunc func(c *Context, err interface{})
 
 // Recovery returns a middleware that recovers from any panics and writes a 500 if there was one.
 func Recovery() HandlerFunc {
 	return RecoveryWithWriter(DefaultErrorWriter)
 }
 
-// CustomRecovery returns a middleware that recovers from any panics and calls the provided handle func to handle it.
+//CustomRecovery returns a middleware that recovers from any panics and calls the provided handle func to handle it.
 func CustomRecovery(handle RecoveryFunc) HandlerFunc {
 	return RecoveryWithWriter(DefaultErrorWriter, handle)
 }
@@ -61,8 +60,7 @@ func CustomRecoveryWithWriter(out io.Writer, handle RecoveryFunc) HandlerFunc {
 				// condition that warrants a panic stack trace.
 				var brokenPipe bool
 				if ne, ok := err.(*net.OpError); ok {
-					var se *os.SyscallError
-					if errors.As(ne, &se) {
+					if se, ok := ne.Err.(*os.SyscallError); ok {
 						if strings.Contains(strings.ToLower(se.Error()), "broken pipe") || strings.Contains(strings.ToLower(se.Error()), "connection reset by peer") {
 							brokenPipe = true
 						}
@@ -102,7 +100,7 @@ func CustomRecoveryWithWriter(out io.Writer, handle RecoveryFunc) HandlerFunc {
 	}
 }
 
-func defaultHandleRecovery(c *Context, err any) {
+func defaultHandleRecovery(c *Context, err interface{}) {
 	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
@@ -155,7 +153,7 @@ func function(pc uintptr) []byte {
 	//	runtime/debug.*T·ptrmethod
 	// and want
 	//	*T.ptrmethod
-	// Also the package path might contain dot (e.g. code.google.com/...),
+	// Also the package path might contains dot (e.g. code.google.com/...),
 	// so first eliminate the path prefix
 	if lastSlash := bytes.LastIndex(name, slash); lastSlash >= 0 {
 		name = name[lastSlash+1:]
@@ -167,7 +165,7 @@ func function(pc uintptr) []byte {
 	return name
 }
 
-// timeFormat returns a customized time string for logger.
 func timeFormat(t time.Time) string {
-	return t.Format("2006/01/02 - 15:04:05")
+	timeString := t.Format("2006/01/02 - 15:04:05")
+	return timeString
 }

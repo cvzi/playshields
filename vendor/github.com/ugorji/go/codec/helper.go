@@ -943,18 +943,13 @@ func (x *basicHandleRuntimeState) setExt(rt reflect.Type, tag uint64, ext Ext) (
 	}
 
 	rtid := rt2id(rt)
-	// handle all natively supported type appropriately, so they cannot have an extension.
-	// However, we do not return an error for these, as we do not document that.
-	// Instead, we silently treat as a no-op, and return.
 	switch rtid {
-	case rawTypId, rawExtTypId:
+	case timeTypId, rawTypId, rawExtTypId:
+		// these are all natively supported type, so they cannot have an extension.
+		// However, we do not return an error for these, as we do not document that.
+		// Instead, we silently treat as a no-op, and return.
 		return
-	case timeTypId:
-		if x.timeBuiltin {
-			return
-		}
 	}
-
 	for i := range x.extHandle {
 		v := &x.extHandle[i]
 		if v.rtid == rtid {
@@ -1971,7 +1966,7 @@ func (ti *typeInfo) init(x []structFieldInfo, n int) {
 // Handling flagCanTransient
 //
 // We support transient optimization if the kind of the type is
-// a number, bool, string, or slice (of number/bool).
+// a number, bool, string, or slice.
 // In addition, we also support if the kind is struct or array,
 // and the type does not contain any pointers recursively).
 //
@@ -1981,20 +1976,15 @@ func (ti *typeInfo) init(x []structFieldInfo, n int) {
 // when GC tries to follow a "transient" pointer which may become a non-pointer soon after.
 //
 
-func transientBitsetFlags() *bitset32 {
-	if transientValueHasStringSlice {
-		return &numBoolStrSliceBitset
-	}
-	return &numBoolBitset
-}
-
 func isCanTransient(t reflect.Type, k reflect.Kind) (v bool) {
-	var bs = transientBitsetFlags()
+	var bs *bitset32
+	if transientValueHasStringSlice {
+		bs = &numBoolStrSliceBitset
+	} else {
+		bs = &numBoolBitset
+	}
 	if bs.isset(byte(k)) {
 		v = true
-	} else if k == reflect.Slice {
-		elem := t.Elem()
-		v = numBoolBitset.isset(byte(elem.Kind()))
 	} else if k == reflect.Array {
 		elem := t.Elem()
 		v = isCanTransient(elem, elem.Kind())
@@ -2020,7 +2010,8 @@ func (ti *typeInfo) doSetFlagCanTransient() {
 		ti.flagCanTransient = true
 	}
 	if ti.flagCanTransient {
-		if !transientBitsetFlags().isset(ti.kind) {
+		// if ti kind is a num, bool, string or slice, then it is flagCanTransient
+		if !numBoolStrSliceBitset.isset(ti.kind) {
 			ti.flagCanTransient = isCanTransient(ti.rt, reflect.Kind(ti.kind))
 		}
 	}
@@ -2481,19 +2472,13 @@ func panicValToErr(h errDecorator, v interface{}, err *error) {
 }
 
 func usableByteSlice(bs []byte, slen int) (out []byte, changed bool) {
-	const maxCap = 1024 * 1024 * 64 // 64MB
-	const skipMaxCap = false        // allow to test
 	if slen <= 0 {
 		return []byte{}, true
 	}
-	if slen <= cap(bs) {
-		return bs[:slen], false
-	}
-	// slen > cap(bs) ... handle memory overload appropriately
-	if skipMaxCap || slen <= maxCap {
+	if cap(bs) < slen {
 		return make([]byte, slen), true
 	}
-	return make([]byte, maxCap), true
+	return bs[:slen], false
 }
 
 func mapKeyFastKindFor(k reflect.Kind) mapKeyFastKind {

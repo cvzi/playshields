@@ -1,11 +1,10 @@
-// Copyright 2014 Manu Martinez-Almeida. All rights reserved.
+// Copyright 2014 Manu Martinez-Almeida.  All rights reserved.
 // Use of this source code is governed by a MIT style
 // license that can be found in the LICENSE file.
 
 package gin
 
 import (
-	"flag"
 	"io"
 	"os"
 
@@ -42,10 +41,8 @@ var DefaultWriter io.Writer = os.Stdout
 // DefaultErrorWriter is the default io.Writer used by Gin to debug errors
 var DefaultErrorWriter io.Writer = os.Stderr
 
-var (
-	ginMode  = debugCode
-	modeName = DebugMode
-)
+var ginMode = debugCode
+var modeName = DebugMode
 
 func init() {
 	mode := os.Getenv(EnvGinMode)
@@ -55,11 +52,7 @@ func init() {
 // SetMode sets gin mode according to input string.
 func SetMode(value string) {
 	if value == "" {
-		if flag.Lookup("test.v") != nil {
-			value = TestMode
-		} else {
-			value = DebugMode
-		}
+		value = DebugMode
 	}
 
 	switch value {
@@ -93,7 +86,7 @@ func EnableJsonDecoderDisallowUnknownFields() {
 	binding.EnableDecoderDisallowUnknownFields = true
 }
 
-// Mode returns current gin mode.
+// Mode returns currently gin mode.
 func Mode() string {
 	return modeName
 }
