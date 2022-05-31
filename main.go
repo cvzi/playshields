@@ -54,18 +54,19 @@ var regExpAppID = regexp.MustCompile(appIDPattern)
 
 func init() {
 	playStorePlaceHolders = map[string]placeHolder{
-		"$version":     {playStoreGetVersion, "App version"},
-		"$installs":    {playStoreGetInstalls, "Installs"},
-		"$size":        {playStoreGetSize, "*Defunct, returns empty string"},
-		"$updated":     {playStoreGetLastUpdate, "Last update"},
-		"$android":     {playStoreGetMinAndroid, "Required min. Android version"},
-		"$minsdk":      {playStoreGetMinSdk, "Required min. SDK"},
-		"$targetsdk":   {playStoreGetTargetSdk, "Target SDK"},
-		"$rating":      {playStoreGetRating, "Rating"},
-		"$floatrating": {playStoreGetPreciseRating, "Precise rating"},
-		"$name":        {playStoreGetName, "Name"},
-		"$friendly":    {playStoreGetContentRating, "Content Rating"},
-		"$published":   {playStoreGetFirstPublished, "First published"},
+		"$version":       {playStoreGetVersion, "App version"},
+		"$installs":      {playStoreGetInstalls, "Installs"},
+		"$size":          {playStoreGetSize, "*Defunct, returns empty string"},
+		"$updated":       {playStoreGetLastUpdate, "Last update"},
+		"$android":       {playStoreGetMinAndroid, "Required min. Android version"},
+		"$minsdk":        {playStoreGetMinSdk, "Required min. SDK"},
+		"$targetsdk":     {playStoreGetTargetSdk, "Target SDK"},
+		"$targetandroid": {playStoreGetTargetAndroid, "Target Android version"},
+		"$rating":        {playStoreGetRating, "Rating"},
+		"$floatrating":   {playStoreGetPreciseRating, "Precise rating"},
+		"$name":          {playStoreGetName, "Name"},
+		"$friendly":      {playStoreGetContentRating, "Content Rating"},
+		"$published":     {playStoreGetFirstPublished, "First published"},
 	}
 
 	// Holds the descriptions for the website.
@@ -177,6 +178,17 @@ func playStoreGetTargetSdk(placeHolderName string, placeHolderGetterParams []str
 	}
 
 	targetSdk := js.GetIndex(1).GetIndex(2).GetIndex(140).GetIndex(1).GetIndex(0).GetIndex(0).GetIndex(0).MustInt()
+	return fmt.Sprint(targetSdk), nil
+}
+
+// playStoreGetTargetAndroid downloads the play store app website and cuts out the targeted Android version
+func playStoreGetTargetAndroid(placeHolderName string, placeHolderGetterParams []string) (content string, err error) {
+	var js *simplejson.Json
+	if js, err = cachedGetJson(placeHolderGetterParams); err != nil {
+		return "", fmt.Errorf("app unavailable: %s", err.Error())
+	}
+
+	targetSdk := js.GetIndex(1).GetIndex(2).GetIndex(140).GetIndex(1).GetIndex(0).GetIndex(0).GetIndex(1).MustString()
 	return fmt.Sprint(targetSdk), nil
 }
 
