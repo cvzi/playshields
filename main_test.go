@@ -27,5 +27,4 @@ func TestBasicRequests(t *testing.T) {
 	if !json.Valid(w.Body.Bytes()) {
 		t.Errorf("GET /play:\tResponse body from is not valid JSON: %s", w.Body.String())
 	}
-
 }
