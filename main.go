@@ -4,7 +4,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"html"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -13,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/bitly/go-simplejson"
 	"github.com/cvzi/playshields/lru"
 	"github.com/gin-gonic/gin"
 )
@@ -29,6 +29,9 @@ var htmlCache = lru.New(500)
 // jsonCache holds the json code for a badge.
 var jsonCache = lru.New(10000)
 
+// jsCache holds the json object from the store website
+var jsCache = lru.New(500)
+
 type htmlCacheEntry struct {
 	content  string
 	ok       bool
@@ -38,7 +41,6 @@ type htmlCacheEntry struct {
 type placeHolderGetter func(string, []string) (string, error)
 type placeHolder struct {
 	placeHolderGetter placeHolderGetter
-	param             string
 	description       string
 }
 
@@ -50,14 +52,18 @@ var regExpAppID = regexp.MustCompile(appIDPattern)
 
 func init() {
 	playStorePlaceHolders = map[string]placeHolder{
-		"$version":  {playStoreGet, "Current Version", "App version"},
-		"$installs": {playStoreGet, "Installs", "Installs"},
-		"$size":     {playStoreGet, "Size", "Size"},
-		"$updated":  {playStoreGet, "Updated", "Last update"},
-		"$android":  {playStoreGet, "Requires Android", "Supported android version"},
-		"$rating":   {playStoreGetRating, "", "Rating"},
-		"$name":     {playStoreGetName, "", "Name"},
-		/*"$friendly": {playStoreGet, "Content Rating", "Content Rating"},*/
+		"$version":     {playStoreGetVersion, "App version"},
+		"$installs":    {playStoreGetInstalls, "Installs"},
+		"$size":        {playStoreGetSize, "*Defunct, returns empty string"},
+		"$updated":     {playStoreGetLastUpdate, "Last update"},
+		"$android":     {playStoreGetMinAndroid, "Required min. Android version"},
+		"$minsdk":      {playStoreGetMinSdk, "Required min. SDK"},
+		"$targetsdk":   {playStoreGetTargetSdk, "Target SDK"},
+		"$rating":      {playStoreGetRating, "Rating"},
+		"$floatrating": {playStoreGetPreciseRating, "Precise rating"},
+		"$name":        {playStoreGetName, "Name"},
+		"$friendly":    {playStoreGetContentRating, "Content Rating"},
+		"$published":   {playStoreGetFirstPublished, "First published"},
 	}
 
 	// Holds the descriptions for the website.
@@ -73,46 +79,163 @@ func playStoreTable(content string, key string) string {
 	return slices[len(slices)-1]
 }
 
-// playStoreGet downloads the play store app website and cuts out the relevant part from the table.
-func playStoreGet(placeHolderName string, placeHolderGetterParams []string) (content string, err error) {
-	appid := placeHolderGetterParams[0]
-	url := playstoreAppURL + url.QueryEscape(appid)
-
-	if content, err = cachedGetBody(url); err != nil {
-		return "", fmt.Errorf("app unavailable: %s", err.Error())
-	}
-
-	if playStorePlaceHolder, ok := playStorePlaceHolders[placeHolderName]; ok {
-		searchString := playStorePlaceHolder.param
-		return playStoreTable(content, searchString), nil
-	}
-	return "", fmt.Errorf("placeholder '%s' not implemented", placeHolderName)
-}
-
 // playStoreGetRating downloads the play store app website and cuts out the rating number.
 func playStoreGetRating(placeHolderName string, placeHolderGetterParams []string) (content string, err error) {
-	appid := placeHolderGetterParams[0]
-	url := playstoreAppURL + url.QueryEscape(appid)
-
-	if content, err = cachedGetBody(url); err != nil {
+	var js *simplejson.Json
+	if js, err = cachedGetJson(placeHolderGetterParams); err != nil {
 		return "", fmt.Errorf("app unavailable: %s", err.Error())
 	}
 
-	slices := strings.Split(strings.Split(content, "stars out of five stars\">")[0], "\"Rated")
-	return strings.TrimSpace(slices[len(slices)-1]), nil
+	rating := js.GetIndex(1).GetIndex(2).GetIndex(51).GetIndex(0).GetIndex(0).MustString()
+	return rating, nil
+}
+
+// playStoreGetPreciseRating downloads the play store app website and cuts out the precice rating number.
+func playStoreGetPreciseRating(placeHolderName string, placeHolderGetterParams []string) (content string, err error) {
+	var js *simplejson.Json
+	if js, err = cachedGetJson(placeHolderGetterParams); err != nil {
+		return "", fmt.Errorf("app unavailable: %s", err.Error())
+	}
+
+	ratingPrecise := js.GetIndex(1).GetIndex(2).GetIndex(51).GetIndex(0).GetIndex(1).MustFloat64()
+	return fmt.Sprint(ratingPrecise), nil
 }
 
 // playStoreGetName downloads the play store app website and cuts out the app name.
 func playStoreGetName(placeHolderName string, placeHolderGetterParams []string) (content string, err error) {
-	appid := placeHolderGetterParams[0]
-	url := playstoreAppURL + url.QueryEscape(appid)
-
-	if content, err = cachedGetBody(url); err != nil {
+	var js *simplejson.Json
+	if js, err = cachedGetJson(placeHolderGetterParams); err != nil {
 		return "", fmt.Errorf("app unavailable: %s", err.Error())
 	}
 
-	slices := strings.Split(strings.Split(strings.Split(content, "itemprop=\"name\"")[1], "</")[0], ">")
-	return html.UnescapeString(strings.TrimSpace(slices[len(slices)-1])), nil
+	name := js.GetIndex(1).GetIndex(2).GetIndex(0).GetIndex(0).MustString()
+	return name, nil
+}
+
+// playStoreGetInstalls downloads the play store app website and cuts out the number of installs.
+func playStoreGetInstalls(placeHolderName string, placeHolderGetterParams []string) (content string, err error) {
+	var js *simplejson.Json
+	if js, err = cachedGetJson(placeHolderGetterParams); err != nil {
+		return "", fmt.Errorf("app unavailable: %s", err.Error())
+	}
+
+	installs := js.GetIndex(1).GetIndex(2).GetIndex(13).GetIndex(3).MustString()
+	return installs, nil
+}
+
+// playStoreGetVersion downloads the play store app website and cuts out the current app version.
+func playStoreGetVersion(placeHolderName string, placeHolderGetterParams []string) (content string, err error) {
+	var js *simplejson.Json
+	if js, err = cachedGetJson(placeHolderGetterParams); err != nil {
+		return "", fmt.Errorf("app unavailable: %s", err.Error())
+	}
+
+	version := js.GetIndex(1).GetIndex(2).GetIndex(140).GetIndex(0).GetIndex(0).GetIndex(0).MustString()
+	return version, nil
+}
+
+// playStoreGetLastUpdate downloads the play store app website and cuts out the date of the last update
+func playStoreGetLastUpdate(placeHolderName string, placeHolderGetterParams []string) (content string, err error) {
+	var js *simplejson.Json
+	if js, err = cachedGetJson(placeHolderGetterParams); err != nil {
+		return "", fmt.Errorf("app unavailable: %s", err.Error())
+	}
+
+	lastUpdate := js.GetIndex(1).GetIndex(2).GetIndex(145).GetIndex(0).GetIndex(0).MustString()
+	return lastUpdate, nil
+}
+
+// playStoreGetMinAndroid downloads the play store app website and cuts out the minimal supported Android version
+func playStoreGetMinAndroid(placeHolderName string, placeHolderGetterParams []string) (content string, err error) {
+	var js *simplejson.Json
+	if js, err = cachedGetJson(placeHolderGetterParams); err != nil {
+		return "", fmt.Errorf("app unavailable: %s", err.Error())
+	}
+
+	minAndroid := js.GetIndex(1).GetIndex(2).GetIndex(140).GetIndex(1).GetIndex(1).GetIndex(0).GetIndex(0).GetIndex(1).MustString()
+	return minAndroid, nil
+}
+
+// playStoreGetMinSdk downloads the play store app website and cuts out the minimal supported Android SDK version
+func playStoreGetMinSdk(placeHolderName string, placeHolderGetterParams []string) (content string, err error) {
+	var js *simplejson.Json
+	if js, err = cachedGetJson(placeHolderGetterParams); err != nil {
+		return "", fmt.Errorf("app unavailable: %s", err.Error())
+	}
+
+	minSdk := js.GetIndex(1).GetIndex(2).GetIndex(140).GetIndex(1).GetIndex(1).GetIndex(0).GetIndex(0).GetIndex(0).MustInt()
+	return fmt.Sprint(minSdk), nil
+}
+
+// playStoreGetTargetSdk downloads the play store app website and cuts out the targeted Android SDK version
+func playStoreGetTargetSdk(placeHolderName string, placeHolderGetterParams []string) (content string, err error) {
+	var js *simplejson.Json
+	if js, err = cachedGetJson(placeHolderGetterParams); err != nil {
+		return "", fmt.Errorf("app unavailable: %s", err.Error())
+	}
+
+	targetSdk := js.GetIndex(1).GetIndex(2).GetIndex(140).GetIndex(1).GetIndex(0).GetIndex(0).GetIndex(0).MustInt()
+	return fmt.Sprint(targetSdk), nil
+}
+
+// playStoreGetContentRating downloads the play store app website and cuts out the content rating string
+func playStoreGetContentRating(placeHolderName string, placeHolderGetterParams []string) (content string, err error) {
+	var js *simplejson.Json
+	if js, err = cachedGetJson(placeHolderGetterParams); err != nil {
+		return "", fmt.Errorf("app unavailable: %s", err.Error())
+	}
+
+	contentRating := js.GetIndex(1).GetIndex(2).GetIndex(9).GetIndex(0).MustString()
+	return fmt.Sprint(contentRating), nil
+}
+
+// playStoreGetFirstPublished downloads the play store app website and cuts out the date of the first publication
+func playStoreGetFirstPublished(placeHolderName string, placeHolderGetterParams []string) (content string, err error) {
+	var js *simplejson.Json
+	if js, err = cachedGetJson(placeHolderGetterParams); err != nil {
+		return "", fmt.Errorf("app unavailable: %s", err.Error())
+	}
+
+	firstPublished := js.GetIndex(1).GetIndex(2).GetIndex(10).GetIndex(0).MustString()
+	return fmt.Sprint(firstPublished), nil
+}
+
+// playStoreGetSize defunct, returns empty string, used to return apk file size
+func playStoreGetSize(placeHolderName string, placeHolderGetterParams []string) (content string, err error) {
+	return "", nil
+}
+
+// cachedGetJson downloads a website and cuts out the json part, parses it and stores the result in cache.
+func cachedGetJson(placeHolderGetterParams []string) (js *simplejson.Json, err error) {
+	appid := placeHolderGetterParams[0]
+	url := playstoreAppURL + url.QueryEscape(appid)
+
+	if cacheEntry, ok := jsCache.Get(appid); ok {
+		return cacheEntry.(*simplejson.Json), nil
+	}
+
+	content, err := cachedGetBody(url)
+
+	if err != nil {
+		return nil, err
+	}
+
+	parts := strings.Split(content, "AF_initDataCallback({")[1:]
+	var arrString string = ""
+	for _, element := range parts {
+		if strings.Contains(element, "[\""+appid+"\"],") {
+			arrString = strings.TrimSpace(strings.Split(element, "</script>")[0])
+			arrString = strings.TrimSpace(strings.Split(strings.SplitN(arrString, "data:", 2)[1], "sideChannel:")[0])
+			arrString = arrString[0 : len(arrString)-1] // remove trailing comma
+		}
+	}
+
+	js, err = simplejson.NewJson([]byte(arrString))
+	if err != nil {
+		return nil, err
+	}
+	jsCache.Set(appid, js)
+	return js, nil
 }
 
 // cachedGetBody downloads a website and cuts out the body part and stores the result in cache.
