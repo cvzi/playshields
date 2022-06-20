@@ -7,10 +7,8 @@ import (
 	"sync"
 )
 
-// Cache represents a LRU consisting of a map as an index and a list to hold data and indicate the last recently used queue.
-//
-// BUG(cvzi):The zero value of Cache cannot be used. TODO make zero value usable
-type Cache struct {
+// cache represents a LRU consisting of a map as an index and a list to hold data and indicate the last recently used queue.
+type cache struct {
 	max   int
 	index map[interface{}]*list.Element
 	*list.List
@@ -24,8 +22,9 @@ type listData struct {
 }
 
 // New returns an empty cache with capacity max
-func New(max int) *Cache {
-	return &Cache{
+// it represents a LRU consisting of a map as an index and a list to hold data and indicate the last recently used queue.
+func New(max int) *cache {
+	return &cache{
 		max:   max,
 		index: make(map[interface{}]*list.Element, max+1),
 		List:  list.New(),
@@ -34,7 +33,7 @@ func New(max int) *Cache {
 
 // Get returns element or nil, ok is true if the key x is present in the cache and
 // sets the element as the last recently used.
-func (c *Cache) Get(key interface{}) (value interface{}, ok bool) {
+func (c *cache) Get(key interface{}) (value interface{}, ok bool) {
 	c.RLock()
 	defer c.RUnlock()
 	listElement, ok := c.index[key]
@@ -47,7 +46,7 @@ func (c *Cache) Get(key interface{}) (value interface{}, ok bool) {
 
 // Set inserts or updates the value of key and
 // sets the element as the last recently used.
-func (c *Cache) Set(key interface{}, value interface{}) {
+func (c *cache) Set(key interface{}, value interface{}) {
 	c.Lock()
 	defer c.Unlock()
 
