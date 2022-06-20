@@ -416,7 +416,13 @@ func main() {
 	if port == "" {
 		log.Fatal("$PORT must be set")
 	}
-
+	remoteAddr := os.Getenv("REMOTE_ADDR")
+	var trustedProxies []string
+	if strings.TrimSpace(remoteAddr) != "" {
+		trustedProxies = []string{remoteAddr}
+		log.Printf("SetTrustedProxies: %s", remoteAddr)
+	}
 	router := setupRouter()
+	router.SetTrustedProxies(trustedProxies)
 	router.Run(":" + port)
 }
