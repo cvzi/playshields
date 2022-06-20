@@ -134,6 +134,9 @@ func playStoreGetVersion(placeHolderName string, placeHolderGetterParams []strin
 	}
 
 	version := js.GetIndex(1).GetIndex(2).GetIndex(140).GetIndex(0).GetIndex(0).GetIndex(0).MustString()
+	if strings.TrimSpace(version) == "" {
+		return "Varies with device", nil
+	}
 	return version, nil
 }
 
@@ -156,6 +159,9 @@ func playStoreGetMinAndroid(placeHolderName string, placeHolderGetterParams []st
 	}
 
 	minAndroid := js.GetIndex(1).GetIndex(2).GetIndex(140).GetIndex(1).GetIndex(1).GetIndex(0).GetIndex(0).GetIndex(1).MustString()
+	if strings.TrimSpace(minAndroid) == "" {
+		return "Varies with device", nil
+	}
 	return minAndroid, nil
 }
 
@@ -167,6 +173,9 @@ func playStoreGetMinSdk(placeHolderName string, placeHolderGetterParams []string
 	}
 
 	minSdk := js.GetIndex(1).GetIndex(2).GetIndex(140).GetIndex(1).GetIndex(1).GetIndex(0).GetIndex(0).GetIndex(0).MustInt()
+	if minSdk < 1 {
+		return "Varies with device", nil
+	}
 	return fmt.Sprint(minSdk), nil
 }
 
