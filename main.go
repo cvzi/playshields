@@ -349,6 +349,7 @@ func setupRouter() *gin.Engine {
 		c.Redirect(http.StatusMovedPermanently, "/static/favicon.ico")
 	})
 	router.GET("/", func(c *gin.Context) {
+		c.Redirect(http.StatusMovedPermanently, "https://play.cuzi.workers.dev/")
 		templateValues := gin.H{
 			"appid":        c.DefaultQuery("appid", ""),
 			"label":        c.DefaultQuery("label", "Android"),
@@ -367,6 +368,7 @@ func setupRouter() *gin.Engine {
 	})
 	router.GET("/play", func(c *gin.Context) {
 		c.Header("Cache-Control", "max-age=10000")
+		c.Redirect(http.StatusMovedPermanently, "https://play.cuzi.workers.dev" + c.Request.URL.String())
 		cacheKey := c.Request.URL.Path + c.Request.URL.RawQuery
 		if cacheEntry, ok := jsonCache.Get(cacheKey); ok {
 			c.JSON(http.StatusOK, cacheEntry)
